@@ -238,6 +238,9 @@ export function shoppingPromptText(presetId = null) {
 
 export const SHOPPING_PROMPT = shoppingPromptText()
 
+// [SHOPPING] Diagnóstico de shop.id via APIs reais do fork (getCatalog/getCollections).
+export { listarIdsDeLoja, compararShopId, extrairIds, formatDiagnostico } from "./commerce.js"
+
 /** Integração com o executarFlood: devolve o builder (ou null = flood clássico). */
 export function floodContentBuilderFor(state) {
     if (!state || state.floodKind !== "shopping" || !state.floodContent) return null

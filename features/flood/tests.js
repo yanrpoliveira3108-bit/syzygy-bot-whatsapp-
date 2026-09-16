@@ -16,6 +16,7 @@ import { buildSendContent, defaultSend, makeFloodContentBuilder, describeSendWir
 import { detectShoppingTrigger, parseShoppingOverlay, resolveShoppingSend, shoppingPromptText, floodContentBuilderFor } from "./index.js"
 import { SHOPPING_PRESETS, SHOPPING_PRESET_TEST } from "./presets/shopping.js"
 import { SURFACE_VALID, SURFACE_README_ALIAS, SHOPPING_LIMITS, DEFAULT_SHOPPING_PRESET_ID, getFloodPreset } from "./config.js"
+import { listarIdsDeLoja, compararShopId, extrairIds, formatDiagnostico } from "./commerce.js"
 
 let passed = 0
 let failed = 0
@@ -366,6 +367,29 @@ export async function runFloodShoppingTests() {
         assertEq((await generateWAMessageContent(m4.content, options)).interactiveMessage.shopStorefrontMessage.surface, 3, "passando pelo adapter, o mesmo caso sai como 3 (WA) no proto")
     }
 
+    // ── 12) shop.id: só confere contra as APIs que ESTE fork tem (leitura) ────
+    const sockDiag = {
+        user: { id: "5519999999999@s.whatsapp.net" },
+        getCatalog: async () => ({ products: [{ productId: "9911", name: "Camiseta" }] }),
+        getCollections: async () => ({ collections: [{ id: "7788", name: "Verão", productsCount: 3 }] })
+    }
+    const diagLista = await listarIdsDeLoja(sockDiag)
+    assertEq(diagLista.ok, true, "diagnóstico usa getCatalog + getCollections (existem no fork 7.4.7)")
+    assert(diagLista.ids.some(i => i.value === "9911"), "productId do catálogo vira candidato de shop.id")
+    assert(diagLista.ids.some(i => i.value === "7788"), "id de coleção vira candidato de shop.id")
+    assertEq(typeof sockDiag.sendMessage, "undefined", "diagnóstico é só leitura: nunca passa por sendMessage")
+    const diagId = compararShopId(SHOPPING_PRESET_TEST.shop.id, diagLista)
+    assertEq(diagId.ok, false, "o id do preset de exemplo NÃO é id de catálogo (é URL marcador)")
+    assert(/URL/i.test(diagId.verdict), "veredito explica que é URL em vez de id")
+    assertEq(compararShopId("7788", diagLista).ok, true, "id real da conta é aceito como shop.id")
+    assertEq(extrairIds(null).length, 0, "payload vazio → lista vazia (sem exceção)")
+    const semApi = await listarIdsDeLoja({})
+    assertEq(semApi.error, "COMMERCE_UNAVAILABLE", "socket sem APIs de catálogo → erro nomeado, sem fingir id")
+    const diagTexto = formatDiagnostico(diagLista, SHOPPING_PRESET_TEST.shop.id)
+    assert(/7788/.test(diagTexto) && /n[oã]o id de cat[aá]logo/i.test(diagTexto), "diagnóstico impresso mostra candidatos e o veredito")
+    const diagTextoRuim = formatDiagnostico(semApi)
+    assert(/COMMERCE_UNAVAILABLE|indispon/i.test(diagTextoRuim), "diagnóstico impresso também explica a indisponibilidade")
+
     console.log(`=== FLOOD · SHOPPING: ${passed} ok · ${failed} falhas · ${skipped} skip ===`)
     if (failed) {
         console.log("FALHAS:\n" + failures.map(f => `  - ${f}`).join("\n"))
@@ -382,5 +406,9 @@ function isFilledStringCheck(v) {
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop())) {
     runFloodShoppingTests()
         .then(() => process.exit(0))
-        .catch(() => process.exit(1))
+        .catch((e) => {
+            // sem isto, um throw no meio da suíte saía mudo com exit 1
+            console.log("ERRO CRÍTICO NA SUÍTE:", (e && e.stack) || e)
+            process.exit(1)
+        })
 }

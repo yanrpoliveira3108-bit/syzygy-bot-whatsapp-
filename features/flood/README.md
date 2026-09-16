@@ -310,3 +310,27 @@ comportamento correto (asserts novos: sem `viewOnce` por padrão, `4 → 3` mape
 
 O `A/B` de `messageVersion` (modo `flow`) NÃO está nesse patch — ele é aditivo e vive na
 feature criada nesta sessão; para a branch de produção, teste primeiro o patch acima.
+
+## Onde achar um `shop.id` de verdade
+
+`features/flood/commerce.js` (leitura pura; quem passa o socket é o chamador) usa SOMENTE as APIs
+que este fork tem (`sock.getCatalog`, `sock.getCollections` — ver
+`node_modules/@innovatorssoft/baileys/lib/Socket/business.js`) e responde à pergunta *"o id que
+está no preset é o id do meu catálogo?"*:
+
+```js
+import { listarIdsDeLoja, compararShopId, formatDiagnostico } from "./features/flood/commerce.js"
+const lista = await listarIdsDeLoja(sock)             // products[].productId + collections[].id
+console.log(formatDiagnostico(lista, preset.shop.id))
+// • conta consultada: 5519…@s.whatsapp.net
+// • ids candidatos: 9911 (Camiseta) [catalog.productId] · 7788 (Verão) [collections.id]
+// • veredito do preset: '…' é URL, não id de catálogo/vitrine.
+```
+
+Sem código: no Commerce Manager a URL da vitrine é
+`business.facebook.com/commerce/catalogs/<CATALOG_ID>/products` — esse `<CATALOG_ID>` costuma ser o
+`shop.id` que resolve. O preset atual (`69f826a` e o `shopping-test` desta branch) carrega uma URL
+do Wikipedia: é **marcador**, não id — mesmo com payload limpo, o cliente não tem o que resolver.
+
+Nada aqui promete card visível, e o módulo é read-only (não chama `sendMessage`), por isso não foi
+ligado a menu/comando nenhum: quem tem o socket chama quando quiser.
