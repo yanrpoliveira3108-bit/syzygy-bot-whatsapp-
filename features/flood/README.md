@@ -342,3 +342,109 @@ do Wikipedia: é **marcador**, não id — mesmo com payload limpo, o cliente n�
 
 Nada aqui promete card visível, e o módulo é read-only (não chama `sendMessage`), por isso não foi
 ligado a menu/comando nenhum: quem tem o socket chama quando quiser.
+
+---
+
+# Infraestrutura de presets (recuperada de `arena/01a0aaae` e adaptada ao AB7)
+
+A arena `01a0aaae` tinha um sistema de flood de presets (queue/limiter/kill switch/
+allowlist/custom store/presets/speed + `runPresetJob`). Ele foi **reconstruído** aqui —
+não copiado por cima: `cherry-pick` dos commits e substituição do `engine.js` do AB7 estão
+fora de cogitação, porque o `engine.js` daqui é a camada de ENVIO do shopping e o `executarFlood`
+de `services/groupService.js` continua sendo o executor do projeto.
+
+```
+preset → loadPreset() → validação do tipo → allowlist → grupo protegido →
+       → cooldown → speed (FLOOD_MODOS/CONFIG) → queue + limiter → builder →
+       → services/groupService.executarFlood() → métricas/resultado estruturado
+```
+
+| módulo | o que traz | dependências |
+|---|---|---|
+| `limiter.js` | `createLimiter`, `withTimeout`, `sleep`, `classifyError`, `remainingCooldown`, `markJobEnd`, `clearCooldown` | nada (infra pura) |
+| `queue.js` | `createQueue` — mata na 1ª iteração após kill switch, retry limitado, abort em `disconnect`/permanente, resultados por item | `limiter.js`, `killswitch.js` |
+| `killswitch.js` | `isKillSwitchOn`, `setKillSwitch(on,{persist})`, `toggleKillSwitch`, `onKillSwitch`, `killSwitchStatusTexto` | `utils/config.js` |
+| `allowlist.js` | `getAllowlist`, `normalizeTargetJid`, `isOnAllowlist`, `filterAllowlist`, `filterTargets`, `add/removeAllowlistJid`, `formatAllowlistTexto`, `maskJid` | `utils/config.js`, `utils/permissions.js` |
+| `customStore.js` | CRUD em `CONFIG.floodCustomPresets` (`slugPresetId`, `save/update/delete/list`, `formatCustomPresetsTexto`, IDs reservados) | `utils/config.js` |
+| `speed.js` | `resolveFloodSpeed`, `formatFloodSpeedMenu`, `applyFloodSpeed`, `toFloodOpts` | `utils/config.js` |
+| `groups.js` | `parseSelectedGroups` (`1` ou `1,3,5`), `extractTargetJids` | nada |
+| `payment.js` | adapter `{payment:{note,currency,amount,offset,from}}` → `requestPaymentMessage` (o `sendPaymentMessage` antigo caiu: envio é do laço) | nada |
+| `presets/{index,text,mention,media,payment,custom}.js` + `presets/shoppingBuilder.js` | `loadPreset`, `buildContent`, `makeIterationBuilder`, `listPresets`, `previewContentKeys` | builders por tipo |
+| `presetEngine.js` | `runPresetJob`, `formatPresetJobResult`, `isFloodEngineRunning`, `currentJobInfo`, `cancelRunningJob` | os acima + `executarFlood` (import dinâmico) |
+| `doctor.mjs` | diagnóstico no terminal, **zero envio** | os acima |
+
+## Tetos (é isto que mantém o sistema de *teste*)
+
+`FLOOD_PRESET_HARD_CAP` em `config.js`: **10 mensagens · intervalo ≥ 1000 ms · concorrência ≤ 2 ·
+cooldown ≥ 5 s · timeout 3–30 s · retries ≤ 2**. `clampPresetLimits()` é o único ponto que aplica
+e nada — preset, overlay do wizard, `config.json` ou custom — consegue passar por cima. Além
+disso, **o `maxMessages` do preset é o teto dele**: overlay só reduz. `clampJobQtd()` ainda corta
+em `MAX_FLOOD` do projeto.
+
+Cooldown é por preset e **sem bypass acidental**: só `ignoreCooldown: true` explícito ignora.
+Kill switch ligado interrompe (a) jobs de preset na próxima iteração da fila, (b) o flood
+clássico na fronteira do lote — `executarFlood` agora devolve `stopado: "KILL_SWITCH"` e
+`tentadas`, e `executarFloodLote` marca os grupos restantes como cancelados.
+
+Allowlist: `CONFIG.floodAllowlist` só cresce por `addAllowlistJid` (chamado por quem já é
+autorizado). Não existe `allGroups`, `allContacts`, `everyone`. Lista vazia = `ALLOWLIST_EMPTY`
+(nada enviado). Grupo em `gruposAutorizados` (`isAuthorizedGroup`) é bloqueado por
+`filterTargets()` mesmo que esteja na allowlist.
+
+Mentions (preset `mention`): somente de lista explícita, deduplicadas, com teto de 20; texto com
+telefone visível → `MENTION_LEAK`; e `executarFlood` **não sobrescreve** as `mentions` que o
+builder forneceu — o `marcarFantasma` do projeto só entra quando o builder não marcou nada.
+Ou seja: preset de mention nunca vira "marcar todos".
+
+## Como usar
+
+```bash
+node features/flood/doctor.mjs                                  # estado + dry-run de todo preset
+node features/flood/doctor.mjs --target 1203…@g.us --qtd 2     # valida as porteiras do SEU alvo
+node features/flood/tests.js                                    # 183 asserts (shopping/AB7)
+node features/flood/tests-infra.js                              # 228 asserts (esta infra)
+```
+
+```js
+import { runPresetJob, formatPresetJobResult, setKillSwitch } from "./features/flood/index.js"
+
+const r = await runPresetJob({
+    presetId: "shopping-test",              // text | mention | media | payment | shopping | custom
+    targets: ["120363…@g.us"],              // JID explicitamente na allowlist
+    qtd: 3,
+    floodModo: "seguro",                     // 0 = config atual · 1..4 · ms custom
+    dryRun: true                             // padrão do runtime é true (nada sai)
+})
+console.log(formatPresetJobResult(r))        // alvos mascarados, tetos aplicados, métricas
+```
+
+Custom presets: `saveCustomPreset({ name, type, … }, { persist })` grava em
+`CONFIG.floodCustomPresets` e **não toca em mais nenhuma chave** do `config.json`
+(`persist: false` é o que os testes usam para nem escrever o arquivo).
+
+## Preservado x recuperado
+
+- **Shopping AB7 intacto**: `shopping.js`, `engine.js`, `presets/shopping.js`, `config.js`
+  (chaves de superfície/limites/entrega `puro|flow`), `commerce.js` e os patches `69f826a`.
+  O preset `shopping` do registry **delegua** ao builder atual (`presets/shoppingBuilder.js` →
+  `createShoppingPayload` + `buildSendContent`), inclusive no `custom → shopping`.
+- **Payment AB7 intacto**: `Payment stays { payment:{note,currency,amount,offset,from} }`; o
+  engine do shopping continua recusando payment (`PAYMENT_NOT_ALLOWED`), testado.
+- **Flood clássico intacto**: `executarFlood`/`executarFloodLote` continuam sendo o laço único
+  (throttle, lote, `marcarFantasma`, retry de rate limit, grupo protegido). A fila recuperada é
+  infraestrutura por cima, por alvo — não um segundo executor, e não há `sock.sendMessage` novo
+  espalhado.
+- Não mexi em: `handlers/stateHandler.js`, `menus/*`, `commands/*`, `connection/*`, `sessao/*`,
+  banco, `services/fastParser.js`, `actions/floodActions.js`.
+
+## Dois bugs da arena antiga que a portagem corrigiu (com teste)
+
+1. `createLimiter`: o slot era incrementado **depois** do `await` do waiter, então
+   `acquire()` via espaço livre na microtask e a concorrência real estourava o teto. Agora
+   `wake()` reserva o slot antes de acordar quem espera.
+2. `loadPreset`: `clamp({...base, ...overlay})` deixava o overlay subir `maxMessages` do
+   preset até o hard cap. Agora o preset é o teto e overlay só reduz.
+
+`resolveMediaBuffer` ganhou `preset.menuFallback: false` — antes, mídia ausente caía
+silenciosamente na foto de menu do bot; agora isso só acontece se o preset não disser o
+contrário, e o erro `MEDIA_UNAVAILABLE` é testável.

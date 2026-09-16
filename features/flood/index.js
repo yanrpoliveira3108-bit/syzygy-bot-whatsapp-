@@ -238,6 +238,119 @@ export function shoppingPromptText(presetId = null) {
 
 export const SHOPPING_PROMPT = shoppingPromptText()
 
+// ═════════════════════════════════════════════════════════════════════════
+// [INFRA FLOOD · recuperada da arena 01a0aaae e adaptada ao AB7]
+// Barrel único para quem quiser usar a infraestrutura (terminal, actions,
+// agendador). Nada aqui é um segundo executor: o envio continua sendo o
+// executarFlood/executarFloodLote de services/groupService.js.
+// ═════════════════════════════════════════════════════════════════════════
+export {
+    createQueue,
+    QUEUE_CANCELLED
+} from "./queue.js"
+
+export {
+    createLimiter,
+    withTimeout,
+    sleep,
+    classifyError,
+    remainingCooldown,
+    markJobEnd,
+    clearCooldown
+} from "./limiter.js"
+
+export {
+    isKillSwitchOn,
+    setKillSwitch,
+    toggleKillSwitch,
+    onKillSwitch,
+    killSwitchStatusTexto,
+    KILL_SWITCH_REASON
+} from "./killswitch.js"
+
+export {
+    getAllowlist,
+    normalizeTargetJid,
+    isOnAllowlist,
+    filterAllowlist,
+    filterTargets,
+    addAllowlistJid,
+    removeAllowlistJid,
+    formatAllowlistTexto,
+    maskJid,
+    BLOCKED_TARGET,
+    ALLOWLIST_EMPTY,
+    PROTECTED_GROUP_BLOCKED
+} from "./allowlist.js"
+
+export {
+    slugPresetId,
+    listCustomPresets,
+    getCustomPreset,
+    saveCustomPreset,
+    updateCustomPreset,
+    deleteCustomPreset,
+    formatCustomPresetsTexto,
+    isReservedPresetId,
+    CUSTOM_TYPES
+} from "./customStore.js"
+
+export {
+    resolveFloodSpeed,
+    formatFloodSpeedMenu,
+    applyFloodSpeed,
+    toFloodOpts
+} from "./speed.js"
+
+export {
+    parseSelectedGroups,
+    extractTargetJids,
+    TARGETS_REQUIRED
+} from "./groups.js"
+
+export {
+    loadPreset,
+    buildContent as buildPresetContent,
+    listPresets,
+    describePreset,
+    previewContentKeys,
+    listPresetsTexto,
+    PRESET_TYPES,
+    BUILDERS as PRESET_BUILDERS
+} from "./presets/index.js"
+
+export {
+    runPresetJob,
+    formatPresetJobResult,
+    isFloodEngineRunning,
+    currentJobInfo,
+    cancelRunningJob,
+    PresetJobError
+} from "./presetEngine.js"
+
+export {
+    getFloodRuntimeConfig,
+    getPresetDef,
+    listPresetIds,
+    clampPresetLimits,
+    clampJobQtd,
+    FLOOD_PRESET_HARD_CAP,
+    FLOOD_PRESET_TYPES,
+    FLOOD_GENERAL_PRESETS,
+    DEFAULT_FLOOD_PRESET_ID
+} from "./config.js"
+
+export {
+    getPaymentApiInfo,
+    parsePaymentArgs,
+    parseAmount,
+    parseCurrency,
+    createPaymentPayload,
+    buildPaymentContent,
+    formatPaymentError
+} from "./payment.js"
+
+
 // [SHOPPING] Diagnóstico de shop.id via APIs reais do fork (getCatalog/getCollections).
 export { listarIdsDeLoja, compararShopId, extrairIds, formatDiagnostico } from "./commerce.js"
 

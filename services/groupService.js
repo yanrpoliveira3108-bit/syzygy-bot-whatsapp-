@@ -6,6 +6,10 @@ import { getSock, rt } from "../connection/socket.js"
 import { normalizeNumber, getOwnerNumber, isAuthorizedGroup } from "../utils/permissions.js"
 import { err, ok, warn } from "../utils/terminalUI.js"
 import { CONFIG, MAX_FLOOD, FLOOD_MODOS } from "../utils/config.js"
+// [INFRA FLOOD] Kill switch dos presets, recuperado da arena 01a0aaae.
+// Import direto (não passa por features/flood/index.js) para não arrastar o resto da
+// feature para dentro do serviço mais quente do projeto.
+import { isKillSwitchOn } from "../features/flood/killswitch.js"
 import { prepararFoto, prepararFotoBuffer, fetchImagem } from "./mediaService.js"
 
 function isProtectedGroup(jid) {
@@ -294,8 +298,15 @@ export async function executarFlood(jid, msg, qtd, intervaloOuOpts = 100, buildC
     const invis = "\u200b"
     let ok = 0, erros = 0
 
+    let stopado = null
+    let tentadas = 0
     for (let i = 0; i < qtd; i += LOTE) {
+        // [INFRA FLOOD] O flood clássico NÃO tinha como ser interrompido. Agora o
+        // kill switch dos presets é consultado aqui, na fronteira do lote (não no
+        // meio de um Promise.all), e o resultado diz quantos de fato saíram.
+        if (isKillSwitchOn()) { stopado = "KILL_SWITCH"; break }
         const n = Math.min(LOTE, qtd - i)
+        tentadas += n
         const envios = []
         for (let k = 0; k < n; k++) {
             const idx = i + k
@@ -312,7 +323,10 @@ export async function executarFlood(jid, msg, qtd, intervaloOuOpts = 100, buildC
             } else {
                 opts = { text: corpo }
             }
-            if (mentions.length && k === 0) opts.mentions = mentions
+            // [INFRA FLOOD] "mentions" só é sobrescrito pelo marcarFantasma quando o
+            // builder NÃO forneceu lista própria: preset de mention marca somente
+            // destinos explicitamente autorizados, nunca todos os participantes.
+            if (mentions.length && k === 0 && opts.mentions === undefined) opts.mentions = mentions
             envios.push(
                 safeSendMessage(jid, opts, 0).then(() => { ok++ }).catch(() => { erros++ })
             )
@@ -324,7 +338,16 @@ export async function executarFlood(jid, msg, qtd, intervaloOuOpts = 100, buildC
             if (delay > 0) await new Promise(r => setTimeout(r, delay))
         }
     }
-    return { ok, erros, total: qtd, modo: cfg.modo, intervalo: intervaloMs, lote: LOTE }
+    return {
+        ok,
+        erros,
+        total: qtd,
+        tentadas,
+        modo: cfg.modo,
+        intervalo: intervaloMs,
+        lote: LOTE,
+        ...(stopado ? { stopado } : {})
+    }
 }
 
 export async function executarFloodLote(grupos, msg, qtd, opts = {}) {
@@ -335,6 +358,12 @@ export async function executarFloodLote(grupos, msg, qtd, opts = {}) {
     const delayEntreGrupos = cfg.modo === "seguro" ? 600 : cfg.modo === "lento" ? 300 : cfg.modo === "rapido" ? 150 : 200
     for (let i = 0; i < grupos.length; i++) {
         const g = grupos[i]
+        // [INFRA FLOOD] Kill switch também vale para o lote: o que ainda não
+        // começou é reportado como cancelado em vez de ser enviado "para terminar".
+        if (isKillSwitchOn()) {
+            resultados.push({ id: g.id, subject: g.subject || g.id, ok: false, erro: "Flood cancelado (kill switch)", stopado: "KILL_SWITCH" })
+            continue
+        }
         if (isProtectedGroup(g.id)) {
             resultados.push({ id: g.id, subject: g.subject || g.id, ok: false, erro: "Grupo protegido (autorizado)" })
             continue
