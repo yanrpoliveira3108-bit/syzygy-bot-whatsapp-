@@ -167,9 +167,16 @@ export async function runPresetJob(opts = {}) {
                 : []
             let content
             try {
+                let from = opts.from
+                if (!from && (preset.type === "payment")) {
+                    try {
+                        const { getSock } = await import("../../connection/socket.js")
+                        from = getSock()?.user?.id
+                    } catch {}
+                }
                 content = buildContent(preset, {
                     mentions,
-                    from: opts.from,
+                    from,
                     buffer: opts.mediaBuffer
                 })
             } catch (e) {
@@ -185,10 +192,11 @@ export async function runPresetJob(opts = {}) {
             return sendFn(item.target, content, { preset, mentions })
         })
     } catch (e) {
-        console.log(err(`[FLOOD] ERROR ${String(e.message || e).slice(0, 160)}`))
+        const msg = String(e?.message || e).slice(0, 160)
+        console.log(err(`[FLOOD] ERROR ${msg}`))
         runningJob = null
         markJobEnd(preset.id)
-        return { ok: false, error: "ENGINE_ERROR", message: String(e.message || e).slice(0, 160), metrics, dryRun }
+        return { ok: false, error: "ENGINE_ERROR", message: msg, metrics, dryRun }
     }
 
     runningJob = null
@@ -239,6 +247,7 @@ export async function runPresetJob(opts = {}) {
             ok: !!r.ok,
             cancelled: !!r.cancelled,
             error: r.error,
+            message: r.message ? String(r.message).slice(0, 160) : undefined,
             target: maskJid(r.target),
             latency: r.latency,
             dryRun: r.result?.dryRun === true
@@ -250,12 +259,16 @@ export async function runPresetJob(opts = {}) {
 
 async function defaultSend(jid, content) {
     const { getSock } = await import("../../connection/socket.js")
-    const { safeSendMessage } = await import("../../services/groupService.js")
     const sock = getSock()
     if (!sock) throw Object.assign(new Error("NOT_CONNECTED"), { code: "disconnect" })
     if (content && content.payment) {
-        return sock.sendMessage(jid, content)
+        const payment = { ...content.payment }
+        if (!payment.from && sock.user?.id) payment.from = sock.user.id
+        const payload = { payment }
+        if (Array.isArray(content.mentions) && content.mentions.length) payload.mentions = content.mentions
+        return sock.sendMessage(jid, payload)
     }
+    const { safeSendMessage } = await import("../../services/groupService.js")
     return safeSendMessage(jid, content, 1)
 }
 

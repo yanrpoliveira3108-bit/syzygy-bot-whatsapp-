@@ -25,33 +25,46 @@ export function createQueue({ interval, concurrency, timeout, maxRetries, onLog 
                 results.push({ ok: false, cancelled: true, reason: cancelReason || "KILL_SWITCH", target: item?.target })
                 continue
             }
-            const result = await limiter.schedule(async () => {
-                let lastErr = null
-                const retries = Math.max(0, Number(maxRetries) || 0)
-                for (let attempt = 0; attempt <= retries; attempt++) {
-                    if (isCancelled()) return { ok: false, cancelled: true, reason: cancelReason || "KILL_SWITCH", target: item?.target }
-                    const t0 = Date.now()
-                    try {
-                        const sent = await worker(item, attempt)
-                        return { ok: true, target: item?.target, latency: Date.now() - t0, attempt, result: sent }
-                    } catch (e) {
-                        lastErr = e
-                        const cls = classifyError(e)
-                        if (typeof onLog === "function") onLog("retry-check", { kind: cls.kind, attempt, message: String(e?.message || e).slice(0, 120) })
-                        if (cls.abort) {
-                            cancel(cls.kind === "disconnect" ? "DISCONNECT" : "PERMANENT_ERROR")
-                            return { ok: false, target: item?.target, error: cls.kind, message: String(e?.message || e).slice(0, 160), abort: true, latency: Date.now() - t0 }
+            let result
+            try {
+                result = await limiter.schedule(async () => {
+                    let lastErr = null
+                    const retries = Math.max(0, Number(maxRetries) || 0)
+                    for (let attempt = 0; attempt <= retries; attempt++) {
+                        if (isCancelled()) return { ok: false, cancelled: true, reason: cancelReason || "KILL_SWITCH", target: item?.target }
+                        const t0 = Date.now()
+                        try {
+                            const sent = await worker(item, attempt)
+                            return { ok: true, target: item?.target, latency: Date.now() - t0, attempt, result: sent }
+                        } catch (e) {
+                            lastErr = e
+                            const cls = classifyError(e)
+                            if (typeof onLog === "function") onLog("retry-check", { kind: cls.kind, attempt, message: String(e?.message || e).slice(0, 120) })
+                            if (cls.abort) {
+                                cancel(cls.kind === "disconnect" ? "DISCONNECT" : "PERMANENT_ERROR")
+                                return { ok: false, target: item?.target, error: cls.kind, message: String(e?.message || e).slice(0, 160), abort: true, latency: Date.now() - t0 }
+                            }
+                            if (cls.retry && attempt < retries) {
+                                const wait = cls.kind === "rate_limit" ? 800 * (attempt + 1) : 200
+                                await sleep(wait)
+                                continue
+                            }
+                            return { ok: false, target: item?.target, error: cls.kind, message: String(e?.message || e).slice(0, 160), latency: Date.now() - t0 }
                         }
-                        if (cls.retry && attempt < retries) {
-                            const wait = cls.kind === "rate_limit" ? 800 * (attempt + 1) : 200
-                            await sleep(wait)
-                            continue
-                        }
-                        return { ok: false, target: item?.target, error: cls.kind, message: String(e?.message || e).slice(0, 160), latency: Date.now() - t0 }
                     }
+                    return { ok: false, target: item?.target, error: "retries_exhausted", message: String(lastErr?.message || lastErr || "").slice(0, 160) }
+                })
+            } catch (e) {
+                const cls = classifyError(e)
+                if (cls.abort) cancel(cls.kind === "disconnect" ? "DISCONNECT" : "PERMANENT_ERROR")
+                result = {
+                    ok: false,
+                    target: item?.target,
+                    error: cls.kind || e?.code || "error",
+                    message: String(e?.message || e).slice(0, 160),
+                    abort: !!cls.abort
                 }
-                return { ok: false, target: item?.target, error: "retries_exhausted", message: String(lastErr?.message || lastErr || "").slice(0, 160) }
-            })
+            }
             results.push(result)
             if (result?.abort) {
                 cancel(result.error || "ABORT")

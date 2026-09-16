@@ -119,6 +119,13 @@ export async function runFloodPresetTests() {
         const qr = await q.runItems([{ target: "x" }], async () => ({ ok: true }))
         assert(qr[0].cancelled, "fila cancelada não envia")
 
+        const qTimeout = createQueue({ interval: 1, concurrency: 1, timeout: 40, maxRetries: 0 })
+        const qto = await qTimeout.runItems([{ target: "x@g.us" }], async () => {
+            await new Promise(r => setTimeout(r, 120))
+            return { ok: true }
+        })
+        assert(qto[0] && qto[0].ok === false && qto[0].error, "timeout da fila não explode o engine")
+
         // --- kill switch ---
         setKillSwitch(true)
         assert(isKillSwitchOn(), "kill switch on")

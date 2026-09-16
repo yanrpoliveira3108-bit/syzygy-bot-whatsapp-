@@ -69,6 +69,12 @@ export function formatPresetReport(p) {
     return t
 }
 
+const PAYMENT_ERR = new Set([
+    "USAGE", "TEXT_MISSING", "AMOUNT_MISSING", "AMOUNT_INVALID", "AMOUNT_NEGATIVE",
+    "CURRENCY_MISSING", "CURRENCY_INVALID", "CURRENCY_UNSUPPORTED",
+    "PAYMENT_UNAVAILABLE", "PAYMENT_TEST_DISABLED", "PAYMENT_PAYLOAD_INVALID"
+])
+
 function formatJobResult(r) {
     if (!r) return "Falha interna."
     if (!r.ok && r.error) {
@@ -80,17 +86,21 @@ function formatJobResult(r) {
         if (r.error === "PAYMENT_TEST_DISABLED") return "❌ payment-test só roda com floodTestMode ligado."
         if (r.error === "PRESET_UNKNOWN") return "❌ Preset desconhecido. Use text-test, mention-test, media-test, payment-test."
         if (r.error === "MEDIA_UNAVAILABLE") return "❌ media-test: nenhuma imagem configurada (menuImage)."
-        if (r.usage || formatPaymentError(r.error) !== `Erro de pagamento: ${r.error}\n${r.usage || ""}`) {
+        if (r.error === "ENGINE_ERROR") return `❌ Falha no envio: ${r.message || r.error}`
+        if (PAYMENT_ERR.has(r.error) || r.usage) {
             const pretty = formatPaymentError(r.error)
             if (pretty) return `❌ ${pretty}`
         }
-        return `❌ ${r.error}`
+        const detail = r.message ? ` (${r.message})` : ""
+        return `❌ ${r.error}${detail}`
     }
     const m = r.metrics || {}
-    let t = r.dryRun ? "🧪 DRY-RUN (nada enviado)\n" : "✅ Execução\n"
+    let t = r.dryRun ? "🧪 DRY-RUN (nada enviado)\n" : (r.ok ? "✅ Execução\n" : "❌ Execução com falha\n")
     t += `Preset: ${r.preset?.id} (${r.preset?.type})\n`
     t += `Queued: ${m.queued} · Sent: ${m.sent} · Fail: ${m.failed} · Cancel: ${m.cancelled}\n`
     t += `Duration: ${m.duration}ms · Avg latency: ${m.averageLatency}ms\n`
+    const firstFail = (r.results || []).find(x => x && !x.ok && (x.message || x.error))
+    if (firstFail) t += `Erro: ${firstFail.message || firstFail.error}\n`
     if (r.targets?.length) t += `Alvos: ${r.targets.join(", ")}\n`
     if (r.blocked?.length) t += `Bloqueados: ${r.blocked.join(", ")}\n`
     if (r.preset?.type === "payment") {
