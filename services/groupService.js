@@ -7,6 +7,7 @@ import { normalizeNumber, getOwnerNumber, isAuthorizedGroup } from "../utils/per
 import { err, ok, warn } from "../utils/terminalUI.js"
 import { CONFIG, MAX_FLOOD, FLOOD_MODOS } from "../utils/config.js"
 import { prepararFoto, prepararFotoBuffer, fetchImagem } from "./mediaService.js"
+import { isKillSwitchOn } from "../features/flood/killswitch.js"
 
 function isProtectedGroup(jid) {
     try { return isAuthorizedGroup(jid) } catch { return false }
@@ -296,6 +297,7 @@ export async function executarFlood(jid, msg, qtd, intervaloOuOpts = 100) {
     let ok = 0, erros = 0
 
     for (let i = 0; i < qtd; i += LOTE) {
+        if (isKillSwitchOn()) break
         const n = Math.min(LOTE, qtd - i)
         const envios = []
         for (let k = 0; k < n; k++) {
