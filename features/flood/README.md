@@ -308,6 +308,14 @@ comportamento correto (asserts novos: sem `viewOnce` por padrão, `4 → 3` mape
 `surfaceMapped: 4`, `0/5+` → `SURFACE_INVALID`, nada de `caption:""`/`hasMediaAttachment:false`,
 `viewOnce: true` explícito ainda respeitado, preset `shopping-test` com `viewOnce:false`).
 
+Há um segundo patch, **opcional e independente**: `69f826a-shopid-diagnostico-opcional.patch`
+só acrescenta `features/flood/commerce.js` (não edita nada da sua árvore) para você conferir se o
+`shop.id` do preset é um id real do catálogo:
+
+```bash
+git apply features/flood/patches/69f826a-shopid-diagnostico-opcional.patch
+```
+
 O `A/B` de `messageVersion` (modo `flow`) NÃO está nesse patch — ele é aditivo e vive na
 feature criada nesta sessão; para a branch de produção, teste primeiro o patch acima.
 
