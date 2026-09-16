@@ -63,6 +63,34 @@ mapeia para `requestPaymentMessage` (`amount1000 = valor * 1000`).
 
 `paymentInvite` existe no fork, mas **não** carrega valor/moeda — não é usado neste preset.
 
+## Preset: shopping-test
+
+```
+Type: shopping
+Max messages: 3
+Interval: 3000 ms
+Concurrency: 1
+Cooldown: 30 s
+Target mode: selected
+```
+
+Payload (formato text, default suportado pelo fork):
+
+```
+texto / title / subtitle / footer
+shop.surface: 1 (README 1|2|3|4 · proto FB=1 IG=2 WA=3)
+shop.id: URL ou id da loja
+viewOnce: true
+```
+
+API Baileys (`@innovatorssoft/baileys` 7.4.7):
+
+```
+sock.sendMessage(jid, { text, title, subtitle, footer, shop: { surface, id }, viewOnce })
+```
+
+mapeia para `interactiveMessage.shopStorefrontMessage`. Formatos também presentes no fork: image, video, document, location, product. `collection` existe, mas **não** é usado neste preset.
+
 ## Segurança
 
 - Destino = grupos escolhidos na lista (1 ou 1,3,5)
