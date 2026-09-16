@@ -29,6 +29,10 @@ const MIN_RESTO = 4           // só aplica em mensagens com algo após a 1ª li
 export function aplicarLerMais(texto) {
     try {
         if (!CONFIG.lerMais || typeof texto !== "string") return texto
+        // [FLOOD] O prompt do wizard da loja e a prévia de payment são multi-linha
+        // DE PROPÓSITO. Expandi-los com U+034F é o que faz o card de loja nascer com
+        // entulho invisível no corpo (e o corpo do card tem limite de 2048).
+        if (texto.startsWith("\u{1F6CD}️") || texto.startsWith("💳 CONTEÚDO")) return texto
         const i = texto.indexOf("\n")
         if (i < 0) return texto                       // 1 linha só: não mexe
         if (texto.slice(i + 1).trim().length < MIN_RESTO) return texto
