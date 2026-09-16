@@ -270,3 +270,43 @@ node features/flood/tests.js
   inventado;
 * testes de payment: intocados (não existem neste diretório; o fluxo de
   pagamento tem caminho próprio).
+
+---
+
+## Patch para a branch `arena/01a0aaae-…` (`69f826a`) — o código que está em produção
+
+Esta sessão partiu do snapshot `7c8987b`, onde `features/flood/` **não existia**; a branch
+da outra sessão (`arena/01a0aaae-syzygy-bot-whatsapp`, tip em `69f826a`) é a que tem o
+motor de flood/presets real (`engine.js`, `queue.js`, `payment.js`, `shopping.js`,
+`presets/shopping.js`, `tests.js`). Nela, os mesmos três bugs estavam no caminho:
+
+```
+features/flood/shopping.js  viewOnce = src.viewOnce !== false      → SEMPRE true → viewOnceMessage
+                            SHOP_SURFACES = {1,2,3,4}, /^[1-4]$/   → surface 4 ia cru no wire
+                            caption: "" e hasMediaAttachment: false → chaves vazias no payload
+features/flood/config.js    "shopping-test".viewOnce: true          → o preset ligava o wrap
+features/flood/engine.js    defaultSend: { ...content }             → espalhava tudo no sendMessage
+```
+
+Medido com o pacote real (ANTES do fix, mesmo payload): `{ viewOnceMessage }` 34 bytes —
+o que o app não decodifica. DEPOIS: `{ interactiveMessage }` 104 bytes com
+`shopStorefrontMessage { surface: FB, id }`, e `…|4|url` saindo como `surface 3`.
+
+**Aplicar** (na sua árvore, na branch `69f826a`):
+
+```bash
+git checkout arena/01a0aaae-syzygy-bot-whatsapp
+git apply --check features/flood/patches/69f826a-shopping-payload-fix.patch   # testa
+git apply features/flood/patches/69f826a-shopping-payload-fix.patch
+node features/flood/tests.js                                                  # suite dela, verde
+```
+
+O patch toca só `features/flood/{shopping,config,engine,index,tests}.js`: não mexe em
+payment, fila, limiter, allowlist, connection, sessão nem menus. Os testes atuais que
+exigiam `content.viewOnce === true` e `surface 1-4 válidos` foram reescritos para o
+comportamento correto (asserts novos: sem `viewOnce` por padrão, `4 → 3` mapeado com
+`surfaceMapped: 4`, `0/5+` → `SURFACE_INVALID`, nada de `caption:""`/`hasMediaAttachment:false`,
+`viewOnce: true` explícito ainda respeitado, preset `shopping-test` com `viewOnce:false`).
+
+O `A/B` de `messageVersion` (modo `flow`) NÃO está nesse patch — ele é aditivo e vive na
+feature criada nesta sessão; para a branch de produção, teste primeiro o patch acima.
