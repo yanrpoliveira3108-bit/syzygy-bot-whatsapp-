@@ -90,3 +90,31 @@ export function listShoppingPresetsTexto() {
         .map(p => `  *${p.id}* · ${p.label || p.title || "shop"} — surface ${p.shop?.surface} · viewOnce ${p.viewOnce === true ? "SIM" : "não"}`)
         .join("\n")
 }
+
+// ─── Entrega do card: "puro" vs "flow" (A/B com evidência no proto) ─────────
+// Os DOIS modos produzem interactiveMessage.shopStorefrontMessage { surface, id }
+// a partir do atalho { shop } — nunca proto cru, nunca payment.
+//
+//   puro → ramo `else if ('shop' in message && !!message.shop)` (messages.js
+//          ~1374). Gera o card SEM `messageVersion`.
+//   flow → ramo `interactiveButtons/nativeFlow + message.shop` (~1306). Esse ramo
+//          é o ÚNICO do fork que seta `shopStorefrontMessage.messageVersion = 1`,
+//          e exige um nativeFlowMessage válido junto (é o envelope que os menus
+//          deste repo já usam e que, segundo os comentários de
+//          services/interactiveService.js, é o que renderiza no app real).
+//
+// Evidência (gerada com o pacote real, 2026-09-16): shop puro → mv:null;
+// flow → mv:1. Se o app do destinatário só aceita a VITRINE versionada, "puro"
+// é exatamente o que cai em "mensagem indisponível" mesmo com payload limpo.
+// Padrão conservador: "puro" (contrato do README do fork). Use loja:flow: para
+// testar o outro sem mexer em código.
+export const SHOPPING_DELIVERY = { PURE: "puro", FLOW: "flow" }
+export const SHOPPING_DELIVERY_DEFAULT = SHOPPING_DELIVERY.PURE
+export const SHOPPING_FLOW_BUTTON = {
+    name: "cta_url",
+    label: "Ver catálogo",
+    // buttonParamsJson do atalho cta_url (ramo nativeFlow do fork)
+    build(url) {
+        return JSON.stringify({ display_text: this.label, url, mobile_url: url, webview_url: url })
+    }
+}

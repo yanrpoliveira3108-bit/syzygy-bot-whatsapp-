@@ -20,7 +20,7 @@ import { isShoppingContent, SHOPPING_ERROR, ShoppingPayloadError } from "./shopp
 
 /** Chaves aceitas no atalho de send do shopping (nenhuma é inventada: todas são
  *  lidas por generateWAMessageContent no ramo 'shop'/'text' do fork 7.4.7). */
-export const SHOP_SEND_KEYS = ["text", "title", "subtitle", "footer", "shop", "viewOnce", "mentions", "linkPreview"]
+export const SHOP_SEND_KEYS = ["text", "title", "subtitle", "footer", "shop", "nativeFlow", "viewOnce", "mentions", "linkPreview"]
 
 export { isShoppingContent }
 
@@ -73,6 +73,21 @@ export function buildSendContent(content = {}) {
     }
     out.shop = { surface, id }
 
+    // nativeFlow SÓ é aceito como envelope do modo flow (ramo do fork que seta
+    // shopStorefrontMessage.messageVersion = 1). Fora disso o adapter já recusa.
+    if (Array.isArray(content.nativeFlow) && content.nativeFlow.length) {
+        out.nativeFlow = content.nativeFlow.map((b, i) => {
+            if (!b || typeof b.name !== "string" || !b.name.trim()) {
+                throw new ShoppingPayloadError(SHOPPING_ERROR.NATIVEFLOW_INVALID, `nativeFlow[${i}].name inválido.`)
+            }
+            const json = typeof b.buttonParamsJson === "string" ? b.buttonParamsJson : "{}"
+            try { JSON.parse(json) } catch {
+                throw new ShoppingPayloadError(SHOPPING_ERROR.NATIVEFLOW_INVALID, `nativeFlow[${i}].buttonParamsJson precisa ser JSON (o cliente faz parse).`)
+            }
+            return { name: b.name.trim(), buttonParamsJson: json }
+        })
+    }
+
     if (content.viewOnce === true) out.viewOnce = true
     if (Array.isArray(content.mentions) && content.mentions.length) out.mentions = content.mentions
     // linkPreview:false é campo real do ramo 'text' do fork; como o resultado do
@@ -117,6 +132,7 @@ export function makeFloodContentBuilder(baseContent) {
             if (typeof base[k] === "string" && base[k].trim()) out[k] = base[k]
         }
         out.shop = { surface: base.shop.surface, id: base.shop.id }
+        if (Array.isArray(base.nativeFlow) && base.nativeFlow.length) out.nativeFlow = base.nativeFlow
         if (base.viewOnce === true) out.viewOnce = true
         if (base.linkPreview === false) out.linkPreview = false
         // MESMA porteira do envio pontual: o laço do flood nunca leva conteúdo
@@ -130,5 +146,6 @@ export function describeSendWire(content) {
     const c = buildSendContent(content)
     const keys = Object.keys(c).sort()
     if (!isShoppingContent(c)) return `type: text · chaves: ${keys.join(", ")}`
-    return `type: interactiveMessage.shopStorefrontMessage · chaves: ${keys.join(", ")} · surface=${c.shop.surface} · viewOnce=${c.viewOnce === true ? "SIM" : "omitido"}`
+    const flow = Array.isArray(c.nativeFlow) && c.nativeFlow.length
+    return `type: interactiveMessage.shopStorefrontMessage${flow ? " + nativeFlowMessage (messageVersion:1)" : " (shop puro)"} · chaves: ${keys.join(", ")} · surface=${c.shop.surface} · viewOnce=${c.viewOnce === true ? "SIM" : "omitido"}`
 }

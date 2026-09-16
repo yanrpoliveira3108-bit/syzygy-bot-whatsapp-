@@ -12,6 +12,9 @@
 //   loja:texto|title|surface|id                → overlay completo
 //   loja:texto|title|surface                    → id vem do preset
 //   loja:texto|title|4|url                      → 4 vira 3 (WA) com aviso
+//   loja:flow:…  /  loja:puro:…                 → modo de entrega do mesmo card
+//                                                 (flow = ramo nativeFlow+shop do
+//                                                 fork, único com messageVersion:1)
 //
 // (também aceitos como gatilho: "shop:" e "shopping:"). Sem prefixo algum, o
 // flood continua 100% clássico: texto puro, mesmo laço, mesmo limite.
@@ -20,6 +23,7 @@ import {
     createShoppingPayload,
     describeShoppingPayload,
     normalizeSurface,
+    normalizeDelivery,
     isShoppingContent,
     ShoppingPayloadError,
     SHOPPING_ERROR
@@ -30,6 +34,9 @@ import {
     getFloodPreset,
     listShoppingPresets,
     listShoppingPresetsTexto,
+    SHOPPING_FLOW_BUTTON,
+    SHOPPING_DELIVERY,
+    SHOPPING_DELIVERY_DEFAULT,
     SHOPPING_LIMITS,
     SHOPPING_DEFAULTS,
     SURFACE_VALID,
@@ -48,6 +55,7 @@ export {
     createShoppingPayload,
     describeShoppingPayload,
     normalizeSurface,
+    normalizeDelivery,
     isShoppingContent,
     ShoppingPayloadError,
     SHOPPING_ERROR,
@@ -56,6 +64,9 @@ export {
     getFloodPreset,
     listShoppingPresets,
     listShoppingPresetsTexto,
+    SHOPPING_FLOW_BUTTON,
+    SHOPPING_DELIVERY,
+    SHOPPING_DELIVERY_DEFAULT,
     SHOPPING_LIMITS,
     SURFACE_VALID,
     SURFACE_NAMES,
@@ -75,18 +86,31 @@ const SURFACE_LIKE = /^(\d+|fb|ig|wa)$/i
 
 /** Reconhece o gatilho do tipo shopping no passo de mensagem do flood. */
 export function detectShoppingTrigger(text) {
-    if (typeof text !== "string") return { isShopping: false, rest: "" }
+    if (typeof text !== "string") return { isShopping: false, rest: "", delivery: null }
     const t = text.trim()
     for (const trig of SHOPPING_TRIGGERS) {
         if (t.toLowerCase().startsWith(trig)) {
-            return { isShopping: true, rest: t.slice(trig.length).trim(), trigger: trig }
+            const after = t.slice(trig.length).trim()
+            // loja:flow:… / loja:puro:… escolhem o MODO DE ENTREGA do mesmo card
+            // (flow = ramo nativeFlow+shop do fork, único que põe messageVersion:1).
+            const m = after.match(/^(flow|puro|pure)\s*:?\s*/i)
+            if (m) {
+                const tok = m[1].toLowerCase()
+                return {
+                    isShopping: true,
+                    rest: after.slice(m[0].length).trim(),
+                    trigger: trig + m[1].toLowerCase() + ":",
+                    delivery: tok === "flow" ? "flow" : "puro"
+                }
+            }
+            return { isShopping: true, rest: after, trigger: trig, delivery: null }
         }
     }
     // A palavra sozinha também vale ("loja", "shop", "shopping") = preset default.
     // NÃO vale "loja de roupas na avenida": sem os dois-pontos o resto do texto
     // é sempre flood clássico, para nunca engolir mensagem de verdade.
-    if (/^(?:loja|shop|shopping)$/i.test(t)) return { isShopping: true, rest: "", trigger: "loja" }
-    return { isShopping: false, rest: "" }
+    if (/^(?:loja|shop|shopping)$/i.test(t)) return { isShopping: true, rest: "", trigger: "loja", delivery: null }
+    return { isShopping: false, rest: "", delivery: null }
 }
 
 /**
@@ -124,7 +148,7 @@ export function parseShoppingOverlay(rest = "", preset = null) {
 }
 
 /** Converte o parse em payload de send. Único ponto que decide defaults+limites. */
-export function resolveShoppingSend(rest = "", { presetId = null } = {}) {
+export function resolveShoppingSend(rest = "", { presetId = null, delivery = null } = {}) {
     const preset = getFloodPreset(presetId || DEFAULT_SHOPPING_PRESET_ID) || FLOOD_PRESETS[DEFAULT_SHOPPING_PRESET_ID]
     const parsed = parseShoppingOverlay(rest, preset)
     if (parsed.kind === "error") {
@@ -139,6 +163,7 @@ export function resolveShoppingSend(rest = "", { presetId = null } = {}) {
     if (parsed.src.shopId !== undefined) shopOverride.id = parsed.src.shopId
     if (Object.keys(shopOverride).length) src.shop = shopOverride
     if (parsed.kind === "default" && preset) src.text = preset.text
+    if (delivery) src.delivery = delivery
 
     // viewOnce do wizard: o operador NÃO pede visualização única no overlay →
     // só o preset pode ligar, e o preset default vem com viewOnce:false.
@@ -163,6 +188,7 @@ export function resolveShoppingSend(rest = "", { presetId = null } = {}) {
         return {
             ok: true,
             kind: parsed.kind,
+            delivery: built.meta.delivery,
             presetId: preset ? preset.id : null,
             content: built.content,
             warnings: built.warnings,
@@ -194,6 +220,8 @@ export function shoppingPromptText(presetId = null) {
         `  O *4* que aparece em README/prints de outros bots NÃO existe no proto deste pacote`,
         `  (WAProto ShopMessage.Surface = 0..3) → se vier 4, enviamos *3 (WA)* e avisamos.`,
         `• *viewOnce* está DESLIGADO (card dentro de visualização única vira "mensagem indisponível").`,
+        `• entrega: padrão *puro*; *loja:flow:* manda o MESMO card pelo ramo que`,
+        `  põe messageVersion:1 (se o app insistir em "indisponível", é o A/B a fazer).`,
         `• corpo: uma linha só (sem o entulho do "Ler Mais" dentro do card).`,
         `• limite: corpo ${SHOPPING_LIMITS.body} · título/subtítulo/rodapé ${SHOPPING_LIMITS.title}.`,
         ``,

@@ -33,6 +33,9 @@
 import {
     SHOPPING_LIMITS,
     SHOPPING_DEFAULTS,
+    SHOPPING_DELIVERY,
+    SHOPPING_DELIVERY_DEFAULT,
+    SHOPPING_FLOW_BUTTON,
     SURFACE_VALID,
     SURFACE_NAMES,
     SURFACE_TOKENS,
@@ -53,7 +56,9 @@ export const SHOPPING_ERROR = {
     VIEW_ONCE_INVALID: "VIEW_ONCE_INVALID",
     PAYMENT_NOT_ALLOWED: "PAYMENT_NOT_ALLOWED",
     RAW_PROTO_NOT_ALLOWED: "RAW_PROTO_NOT_ALLOWED",
-    MEDIA_NOT_SUPPORTED: "MEDIA_NOT_SUPPORTED"
+    MEDIA_NOT_SUPPORTED: "MEDIA_NOT_SUPPORTED",
+    DELIVERY_INVALID: "DELIVERY_INVALID",
+    NATIVEFLOW_INVALID: "NATIVEFLOW_INVALID"
 }
 
 export class ShoppingPayloadError extends Error {
@@ -157,6 +162,45 @@ export function normalizeSurface(raw) {
     )
 }
 
+/**
+ * Modo de entrega do card. Os DOIS usam o atalho { shop } e produzem
+ * interactiveMessage.shopStorefrontMessage; a diferença é que 'flow' cai no ramo
+ * nativeFlow+shop do fork, o único que seta shopStorefrontMessage.messageVersion = 1.
+ */
+export function normalizeDelivery(raw) {
+    if (raw === undefined || raw === null || raw === "") return SHOPPING_DELIVERY_DEFAULT
+    const t = String(raw).trim().toLowerCase()
+    if (t === SHOPPING_DELIVERY.PURE || t === "pure" || t === "puro") return SHOPPING_DELIVERY.PURE
+    if (t === SHOPPING_DELIVERY.FLOW || t === "flow" || t === "nativo") return SHOPPING_DELIVERY.FLOW
+    throw new ShoppingPayloadError(
+        SHOPPING_ERROR.DELIVERY_INVALID,
+        `modo de entrega '${raw}' inválido. Use '${SHOPPING_DELIVERY.PURE}' (shop puro) ou '${SHOPPING_DELIVERY.FLOW}' (shop + nativeFlow, com messageVersion:1).`
+    )
+}
+
+function normalizeFlowButtons(raw, shopId, warnings) {
+    if (Array.isArray(raw) && raw.length) {
+        return raw.map((b, i) => {
+            if (!b || typeof b.name !== "string" || !b.name.trim()) {
+                throw new ShoppingPayloadError(SHOPPING_ERROR.NATIVEFLOW_INVALID, `nativeFlow[${i}].name é obrigatório (ex.: 'cta_url', 'quick_reply').`)
+            }
+            const json = typeof b.buttonParamsJson === "string" ? b.buttonParamsJson : JSON.stringify(b.params || {})
+            try {
+                JSON.parse(json)
+            } catch {
+                // O cliente parseia isso como JSON; string inválida = flow quebrado
+                // (é o mesmo tipo de erro que messageParamsJson:"" causa no menu).
+                throw new ShoppingPayloadError(SHOPPING_ERROR.NATIVEFLOW_INVALID, `nativeFlow[${i}].buttonParamsJson precisa ser JSON válido.`)
+            }
+            return { name: b.name.trim(), buttonParamsJson: json }
+        })
+    }
+    if (!/^https?:\/\//i.test(shopId || "")) {
+        warnings.push("modo flow sem shop.id http(s): botão cta_url sem URL não abre nada — prefira o modo puro ou informe uma URL.")
+    }
+    return [{ name: SHOPPING_FLOW_BUTTON.name, buttonParamsJson: SHOPPING_FLOW_BUTTON.build(shopId || "") }]
+}
+
 function normalizeShopId(raw) {
     if (raw === undefined || raw === null) return null
     if (typeof raw !== "string") {
@@ -188,8 +232,15 @@ export function createShoppingPayload(src = {}, opts = {}) {
         throw new ShoppingPayloadError(SHOPPING_ERROR.SRC_INVALID, "conteúdo shopping precisa ser um objeto.")
     }
 
+    const defaults0 = opts.defaults && typeof opts.defaults === "object" ? opts.defaults : {}
+    const delivery = normalizeDelivery(src.delivery !== undefined ? src.delivery : defaults0.delivery)
+    const flow = delivery === SHOPPING_DELIVERY.FLOW
+
     // 1) Recusas duras.
     for (const key of Object.keys(src)) {
+        // No modo flow o nativeFlow é o ENVELOPE exigido pelo ramo que seta
+        // messageVersion:1 — ali ele é permitido (e só ali).
+        if (flow && (key === "nativeFlow" || key === "interactiveButtons") && src[key]) continue
         const forbid = FORBIDDEN_KEYS[key]
         if (forbid && src[key] !== undefined && src[key] !== null) {
             throw new ShoppingPayloadError(forbid[0], `shopping: campo '${key}' não é permitido. ${forbid[1]}`)
@@ -275,6 +326,7 @@ export function createShoppingPayload(src = {}, opts = {}) {
     if (subtitle) content.subtitle = subtitle
     if (footer) content.footer = footer
     content.shop = { surface, id }
+    if (flow) content.nativeFlow = normalizeFlowButtons(Array.isArray(src.nativeFlow) ? src.nativeFlow : null, id, warnings)
     if (viewOnce) content.viewOnce = true
 
     const meta = {
@@ -286,6 +338,8 @@ export function createShoppingPayload(src = {}, opts = {}) {
             : null,
         hasHeader: !!(title || subtitle),
         hasFooter: !!footer,
+        delivery,
+        messageVersion: flow ? 1 : null,
         viewOnce: content.viewOnce === true,
         shopId: id,
         bodyLength: text.length,
@@ -307,7 +361,8 @@ export function describeShoppingPayload(content, meta) {
     l.push(`• surface: ${content.shop.surface} (${SURFACE_NAMES[content.shop.surface] || "?"})`)
     l.push(`• id: ${content.shop.id}`)
     l.push(`• viewOnce: ${content.viewOnce === true ? "SIM → embrulha em viewOnceMessage (risco alto de 'mensagem indisponível')" : "não (sem wrap de visualização única)"}`)
-    l.push(`• messageVersion: não enviado (o atalho { shop } puro não expõe o campo)`)
+    l.push(`• messageVersion: ${m.delivery === SHOPPING_DELIVERY.FLOW ? "1 (via ramo nativeFlow+shop do fork)" : "não enviado (ramo shop puro não expõe o campo)"}`)
+    l.push(`• entrega: ${m.delivery === SHOPPING_DELIVERY.FLOW ? "flow (nativeFlow + shop)" : "puro (só shop)"}`)
     l.push(`• payment: não (é outro proto, outro caminho)`)
     return l.join("\n")
 }

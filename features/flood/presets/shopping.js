@@ -36,7 +36,11 @@ export const SHOPPING_PRESET_TEST = {
         surface: 1,
         id: "https://en.wikipedia.org/wiki/Shopping_cart"
     },
-    viewOnce: false
+    viewOnce: false,
+    // 'puro' = ramo shop puro do fork (sem messageVersion).
+    // 'flow' = mesmo card pelo ramo nativeFlow+shop, que seta messageVersion:1
+    // (é o A/B para o caso "payload limpo e o app ainda diz indisponível").
+    delivery: "puro"
 }
 
 export const SHOPPING_PRESETS = [SHOPPING_PRESET_TEST]

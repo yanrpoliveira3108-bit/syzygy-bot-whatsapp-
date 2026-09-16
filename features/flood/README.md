@@ -130,16 +130,57 @@ adapter com `surface: 4` não chega ao socket — vira `SURFACE_INVALID`. Por is
 overlay `Promoção|by zuck|4|https://…` (o caso real colado do print) **nunca**
 gera send com surface 4: gera surface 3 com aviso.
 
-## `messageVersion` — existe, mas não é nosso para inventar
+## `messageVersion` e os DOIS caminhos do `shop` no fork
 
-O proto tem `messageVersion = 3`, e o **outro** caminho do fork
-(`interactiveButtons`/`nativeFlow` + `message.shop || message.shopSurface`) seta
-`messageVersion: 1`. O ramo `shop` puro **não** seta, e o atalho `sendMessage`
-não expõe esse campo.
+| caminho (atalho `sendMessage`) | `shopStorefrontMessage` | `nativeFlowMessage` | bytes do proto |
+| --- | --- | --- | --- |
+| `{ text, shop:{surface,id} }` → ramo `shop` puro (~1374) | `{surface,id}` — **`messageVersion: null`** | não | 138 |
+| `{ text, nativeFlow:[…], shop:{surface,id} }` → ramo `interactiveButtons/nativeFlow` + `message.shop` (~1306) | `{surface,id,messageVersion:1}` | **sim** | 195 |
 
-Como a arquitetura proíbe montar proto cru, **não mandamos `messageVersion`**.
-Se um dia o card precisar do campo, o caminho é o ramo `nativeFlow + shop` — e
-isso é outra decisão, fora do escopo do flood.
+Medidos com `generateWAMessageContent` + `proto.Message.encode` do pacote real
+(2026-09-16). O proto deste fork (e o do Baileys upstream 6.7.9, comparado na
+mesma data) **não tem** `InteractiveMessage.type`/`STORE` — não existe outro campo
+a setar para "escolher o renderer".
+
+## `loja:flow:` — o A/B para quando o payload está limpo e o app ainda diz "indisponível"
+
+Evidência interna deste repo: `services/interactiveService.js` monta os menus como
+`viewOnceMessage { interactiveMessage { header, body, footer, nativeFlowMessage } }`
+e os comentários chamam isso de "único transporte comprovado renderizando";
+`services/buttons.js` e `services/list.js` dizem "SEM viewOnceMessage (fix @lid)".
+Ou seja: **no app de vocês o wrap sozinho não é o impedimento** — o que decide é o
+conteúdo do `oneof interactiveMessage` e a versão dele.
+
+Por isso existe o modo `flow` (`loja:flow:…`): o MESMO card de loja, com as MESMAS
+regras (sem viewOnce por padrão, surface 1–3, sem payment, sem proto cru), enviado
+pelo ramo do fork que põe **`messageVersion: 1`** e anexa um `nativeFlowMessage`
+com um botão `cta_url` apontando para o `shop.id`. É o único jeito, dentro do
+atalho `{ shop }`, de entregar a vitrine versionada.
+
+Como usar o A/B (mesmo grupo, mesma hora):
+
+```
+loja:0            → modo puro (padrão)      → se der "indisponível", teste:
+loja:flow:0       → modo flow (mv:1)        → se também falhar: o app/conta não
+                                               implementa storefront
+```
+
+Leia a linha `wire:` que o fim do flood imprime: `… (shop puro)` ou
+`… + nativeFlowMessage (messageVersion:1)`. É a prova do que saiu, sem depender
+de suposição.
+
+**`shop.id` não é URL no tráfego real.** É o id da vitrine/catálogo da conta
+Business. O exemplo `id: 'https://example.com'` do README do fork é ficção
+documental; um id que o cliente não resolve também produz card não renderizado.
+O preset `shopping-test` traz uma URL de exemplo **como marcador** — troque pelo
+id real do catálogo (e, no modo `flow`, a URL vira o botão `cta_url`).
+
+## `messageVersion` — não é nosso para inventar
+
+O ramo `shop` puro **não** seta `messageVersion`, e o atalho `{ shop }` não expõe
+o campo. Como a arquitetura proíbe montar proto cru, **o modo `puro` não manda
+`messageVersion`** — nem agora, nem "adivinhando" um valor. Quem precisa da
+versão usa o ramo que o próprio fork versiona: o modo `flow` (acima).
 
 ---
 
@@ -215,9 +256,10 @@ conferir (a) se a notificação abre, (b) se aparece texto em vez de card, (c) o
 node features/flood/tests.js
 ```
 
-* **145** asserções com `@innovatorssoft/baileys` instalado; sem o pacote, o
-  mesmo suite roda **127 ok + 2 SKIP** (os blocos de contrato ficam SKIP
-  declarado no stdout — nunca "passado" inventado), sem dependências extras.
+* **172** asserções com `@innovatorssoft/baileys` instalado (cobre os dois modos
+  de entrega e compara o proto gerado com `messageVersion` nulo/1); sem o pacote,
+  o mesmo suite roda os blocos de contrato como **SKIP declarado** no stdout —
+  nunca "passado" inventado.
 * quando `@innovatorssoft/baileys` está instalado, o suite **também**: compara as
   chaves que enviamos com as que o `lib/Utils/messages.js` do fork realmente lê,
   confere o enum em `WAProto/E2E/E2E.proto` (e que `= 4` não existe) e gera o

@@ -210,7 +210,7 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
     if (st.action === "waiting_flood_message" && text) {
         const loja = detectShoppingTrigger(text)
         if (loja.isShopping) {
-            const r = resolveShoppingSend(loja.rest)
+            const r = resolveShoppingSend(loja.rest, { delivery: loja.delivery })
             if (!r.ok) {
                 // 1ª tentativa errada: prompt completo da loja. Depois disso só o
                 // erro — o dono precisa de resposta em TODA tentativa, senão o
@@ -659,7 +659,7 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
     if (st.action === "multi_flood_message" && text) {
         const loja = detectShoppingTrigger(text)
         if (loja.isShopping) {
-            const r = resolveShoppingSend(loja.rest)
+            const r = resolveShoppingSend(loja.rest, { delivery: loja.delivery })
             if (!r.ok) {
                 if (!st.avisouLoja) {
                     setState(ownerKey, { ...st, avisouLoja: true })
