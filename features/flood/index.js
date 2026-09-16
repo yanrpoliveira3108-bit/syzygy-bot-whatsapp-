@@ -12,6 +12,7 @@ import { maskJid, BLOCKED_TARGET } from "./allowlist.js"
 import { isKillSwitchOn, setKillSwitch } from "./killswitch.js"
 import { cancelRunningJob, isFloodEngineRunning, runPresetJob, describePreset } from "./engine.js"
 import { formatPaymentError, getPaymentApiInfo, parsePaymentArgs } from "./payment.js"
+import { formatShoppingError, getShoppingApiInfo, parseShoppingArgs } from "./shopping.js"
 import { listPresets } from "./presets/index.js"
 import { parseSelectedGroups, TARGETS_REQUIRED, extractTargetJids } from "./groups.js"
 import { resolveFloodSpeed, formatFloodSpeedMenu } from "./speed.js"
@@ -25,6 +26,8 @@ export {
     setKillSwitch,
     getPaymentApiInfo,
     parsePaymentArgs,
+    getShoppingApiInfo,
+    parseShoppingArgs,
     describePreset,
     listPresets,
     parseSelectedGroups,
@@ -39,10 +42,11 @@ const PRESET_BY_ACTION = {
     flood_preset_text_test: "text-test",
     flood_preset_mention_test: "mention-test",
     flood_preset_media_test: "media-test",
-    flood_preset_payment_test: "payment-test"
+    flood_preset_payment_test: "payment-test",
+    flood_preset_shopping_test: "shopping-test"
 }
 
-const BUILTIN_IDS = ["text-test", "mention-test", "media-test", "payment-test"]
+const BUILTIN_IDS = ["text-test", "mention-test", "media-test", "payment-test", "shopping-test"]
 
 export function formatPresetsMenu() {
     const rtCfg = getFloodRuntimeConfig()
@@ -54,6 +58,7 @@ export function formatPresetsMenu() {
         const n = i + 1
         let extra = p.type
         if (p.type === "payment") extra += ` ${Number(p.amount || 0).toFixed(2)} ${p.currency || "BRL"}`
+        if (p.type === "shopping") extra += ` surface ${p.shop?.surface ?? ""}`
         if (p.modo) extra += ` · ${p.modo}`
         t += `  ${n} · ${p.id}  (${extra})\n`
     })
@@ -64,6 +69,7 @@ export function formatPresetsMenu() {
     t += `_Depois do preset: grupos → conteúdo → qtd → velocidade._\n`
     t += `_Grupos: 1 ou 1,3,5_\n`
     t += `_Pagamento: texto|valor|moeda_\n`
+    t += `_Loja: texto|title|surface|id_\n`
     t += `_Velocidade: 1 rápido · 2 normal · 3 lento · 4 seguro_\n`
     t += `_Rápido: 2/preset/payment-test_`
     return t
@@ -82,6 +88,9 @@ export function formatPresetReport(p) {
     if (p.type === "payment") {
         t += `\nPayload:\nTexto:\n${p.text || "Pagamento de teste"}\n\nValor:\n${Number(p.amount).toFixed(2)}\n\nMoeda:\n${p.currency}\n`
     }
+    if (p.type === "shopping") {
+        t += `\nPayload:\nTexto:\n${p.text || "Produto de teste"}\n\nTitle:\n${p.title || ""}\n\nSurface:\n${p.shop?.surface ?? ""}\n\nShop id:\n${p.shop?.id || ""}\n`
+    }
     return t
 }
 
@@ -89,6 +98,16 @@ const PAYMENT_ERR = new Set([
     "USAGE", "TEXT_MISSING", "AMOUNT_MISSING", "AMOUNT_INVALID", "AMOUNT_NEGATIVE",
     "CURRENCY_MISSING", "CURRENCY_INVALID", "CURRENCY_UNSUPPORTED",
     "PAYMENT_UNAVAILABLE", "PAYMENT_TEST_DISABLED", "PAYMENT_PAYLOAD_INVALID"
+])
+
+const SHOPPING_ERR = new Set([
+    "SURFACE_MISSING", "SURFACE_INVALID", "SHOP_ID_MISSING", "SHOP_ID_INVALID",
+    "URL_MISSING", "URL_INVALID", "MEDIA_MISSING", "MEDIA_INVALID", "MEDIA_URL_INVALID",
+    "MIMETYPE_MISSING", "LOCATION_MISSING", "LOCATION_INVALID",
+    "PRODUCT_MISSING", "PRODUCT_ID_MISSING", "PRODUCT_TITLE_MISSING", "PRODUCT_DESCRIPTION_MISSING",
+    "PRODUCT_CURRENCY_MISSING", "PRODUCT_IMAGE_MISSING", "PRODUCT_IMAGE_COUNT_INVALID",
+    "PRICE_MISSING", "PRICE_INVALID", "BUSINESS_OWNER_MISSING", "BUSINESS_OWNER_INVALID",
+    "FORMAT_UNSUPPORTED", "SHOPPING_UNAVAILABLE", "SHOPPING_TEST_DISABLED", "SHOPPING_PAYLOAD_INVALID"
 ])
 
 function formatJobResult(r) {
@@ -100,9 +119,14 @@ function formatJobResult(r) {
         if (r.error === "JOB_IN_PROGRESS") return "❌ Já existe um teste em execução."
         if (r.error === "COOLDOWN") return `❌ Cooldown ativo (${Math.ceil((r.remainingMs || 0) / 1000)}s).`
         if (r.error === "PAYMENT_TEST_DISABLED") return "❌ payment-test só roda com floodTestMode ligado."
-        if (r.error === "PRESET_UNKNOWN") return "❌ Preset desconhecido. Use 1-4, o id do custom, ou crie com c."
+        if (r.error === "SHOPPING_TEST_DISABLED") return "❌ shopping-test só roda com floodTestMode ligado."
+        if (r.error === "PRESET_UNKNOWN") return "❌ Preset desconhecido. Use 1-5, o id do custom, ou crie com c."
         if (r.error === "MEDIA_UNAVAILABLE") return "❌ media-test: nenhuma imagem configurada (menuImage)."
         if (r.error === "ENGINE_ERROR") return `❌ Falha no envio: ${r.message || r.error}`
+        if (r.type === "shopping" || SHOPPING_ERR.has(r.error)) {
+            const pretty = formatShoppingError(r.error)
+            if (pretty) return `❌ ${pretty}`
+        }
         if (PAYMENT_ERR.has(r.error) || r.usage) {
             const pretty = formatPaymentError(r.error)
             if (pretty) return `❌ ${pretty}`
@@ -120,7 +144,7 @@ function formatJobResult(r) {
     if (firstFail) t += `Erro: ${firstFail.message || firstFail.error}\n`
     if (r.targets?.length) t += `Alvos: ${r.targets.join(", ")}\n`
     if (r.blocked?.length) t += `Bloqueados: ${r.blocked.join(", ")}\n`
-    if (r.preset?.type === "payment") {
+    if (r.preset?.type === "payment" || r.preset?.type === "shopping") {
         t += `\n${formatPresetReport(r.preset)}`
     }
     return t.trim()
@@ -138,6 +162,7 @@ function flowPayload(extra = {}) {
     return {
         presetId: extra.presetId,
         paymentArgs: extra.paymentArgs,
+        shoppingArgs: extra.shoppingArgs,
         dryRun: extra.dryRun,
         qtd: extra.qtd,
         floodModo: extra.floodModo,
@@ -151,6 +176,15 @@ function contentPrompt(presetId) {
     const amount = Number.isFinite(Number(def.amount)) ? Number(def.amount).toFixed(2) : "25.90"
     const currency = def.currency || "BRL"
     return `💳 CONTEÚDO DO PAGAMENTO\nAtual: ${note}|${amount}|${currency}\n\nDigite: texto|valor|moeda\nEx: Pagamento do pedido|25.90|BRL\n\n0 = manter atual`
+}
+
+function shoppingContentPrompt(presetId) {
+    const def = getPresetDef(presetId) || {}
+    const body = def.text || "Produto de teste"
+    const title = def.title || "SYZYGY SHOP"
+    const surface = def.shop?.surface ?? 1
+    const shopId = def.shop?.id || "https://en.wikipedia.org/wiki/QR_code"
+    return `🛍️ CONTEÚDO DA LOJA\nAtual: ${body}|${title}|${surface}|${shopId}\n\nDigite: texto|title|surface|id\nEx: Produto de teste|SYZYGY SHOP|1|https://en.wikipedia.org/wiki/QR_code\nSurface: 1 · 2 · 3 · 4\n\n0 = manter atual`
 }
 
 function qtdPrompt() {
@@ -175,6 +209,11 @@ async function continueWizard(chatJid, ownerKey, extra = {}) {
         await enviarCancelavel(chatJid, contentPrompt(extra.presetId))
         return
     }
+    if (def?.type === "shopping" && (extra.shoppingArgs == null || extra.shoppingArgs === "")) {
+        setState(ownerKey, { action: "flood_preset_pick_content", ...flowPayload(extra) })
+        await enviarCancelavel(chatJid, shoppingContentPrompt(extra.presetId))
+        return
+    }
     if (extra.qtd == null || extra.qtd === "") {
         setState(ownerKey, { action: "flood_preset_pick_qtd", ...flowPayload(extra) })
         await enviarCancelavel(chatJid, qtdPrompt())
@@ -194,6 +233,7 @@ async function executeJob(chatJid, extra = {}) {
         ownerKey: extra.ownerKey,
         dryRun: extra.dryRun,
         paymentArgs: extra.paymentArgs,
+        shoppingArgs: extra.shoppingArgs,
         targets: extra.targets,
         mediaBuffer: extra.mediaBuffer,
         qtd: extra.qtd,
@@ -297,6 +337,7 @@ export async function floodRouter(chatJid, ownerKey, actionId, extra = {}) {
             await promptGroupPick(chatJid, ownerKey, {
                 presetId,
                 paymentArgs: extra.paymentArgs,
+                shoppingArgs: extra.shoppingArgs,
                 dryRun: extra.dryRun,
                 qtd: extra.qtd,
                 floodModo: extra.floodModo
@@ -307,6 +348,7 @@ export async function floodRouter(chatJid, ownerKey, actionId, extra = {}) {
             await continueWizard(chatJid, ownerKey, {
                 presetId,
                 paymentArgs: extra.paymentArgs,
+                shoppingArgs: extra.shoppingArgs,
                 dryRun: extra.dryRun,
                 qtd: extra.qtd,
                 floodModo: extra.floodModo,

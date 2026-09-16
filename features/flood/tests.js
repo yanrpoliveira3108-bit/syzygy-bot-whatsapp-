@@ -2,6 +2,7 @@
 // Testes do engine de presets (sem WhatsApp real).
 
 import { parseAmount, parseCurrency, parsePaymentArgs, createPaymentPayload, buildPaymentContent, formatPaymentError, getPaymentApiInfo } from "./payment.js"
+import { parseSurface, parseShopId, parseShoppingArgs, createShoppingPayload, buildShoppingContent, formatShoppingError, getShoppingApiInfo } from "./shopping.js"
 import { loadPreset, listPresets, buildContent } from "./presets/index.js"
 import { FLOOD_PRESETS } from "./config.js"
 import { normalizeTargetJid } from "./allowlist.js"
@@ -65,8 +66,76 @@ export async function runFloodPresetTests() {
         assert(getPaymentApiInfo().proto === "requestPaymentMessage", "API documentada = requestPaymentMessage")
         assert(formatPaymentError("USAGE").includes("texto|valor|moeda"), "mensagem de uso amigável")
 
+        // --- shopping adapter ---
+        assert(parseShoppingArgs("").error === "USAGE", "shopping vazio → USAGE")
+        assert(parseShoppingArgs("só texto").error === "USAGE", "shopping incompleto → USAGE")
+        assert(parseShoppingArgs("Produto|Title|9|https://example.com").error === "SURFACE_INVALID", "surface 9 inválido")
+        assert(parseShoppingArgs("Produto|Title|0|https://example.com").error === "SURFACE_INVALID", "surface 0 inválido")
+        assert(parseShoppingArgs("Produto|Title|abc|https://example.com").error === "SURFACE_INVALID", "surface abc inválido")
+        assert(parseSurface(1).ok && parseSurface("2").ok && parseSurface(3).ok && parseSurface("4").ok, "surface 1-4 válidos")
+        assert(parseShopId("").error === "SHOP_ID_MISSING", "shop.id vazio")
+        assert(parseShopId("https://").error === "SHOP_ID_INVALID", "shop.id URL inválida")
+        const sh1 = parseShoppingArgs("Produto de teste|SYZYGY SHOP|1|https://en.wikipedia.org/wiki/QR_code")
+        assert(sh1.ok && sh1.surface === 1 && sh1.content.shop.id.startsWith("https://"), "shopping texto|title|surface|id")
+        assert(sh1.content.text === "Produto de teste" && sh1.content.title === "SYZYGY SHOP", "shopping text+title")
+        assert(sh1.content.shop && sh1.content.viewOnce === true, "shopping shop + viewOnce")
+        assert(!("payment" in sh1.content) && !("image" in sh1.content), "shopping text sem payment/image")
+        const shopBuilt = buildShoppingContent(sh1)
+        assert(shopBuilt.shop.surface === 1 && shopBuilt.text === "Produto de teste", "buildShoppingContent API shop")
+        assert(getShoppingApiInfo().proto === "interactiveMessage.shopStorefrontMessage", "API documentada = shopStorefrontMessage")
+        assert(formatShoppingError("SURFACE_INVALID").includes("1, 2, 3 ou 4"), "erro surface amigável")
+        const imgShop = createShoppingPayload({
+            format: "image",
+            image: "https://example.com/image.jpg",
+            caption: "Look",
+            title: "Shop",
+            shop: { surface: 2, id: "https://example.com" }
+        })
+        assert(imgShop.ok && imgShop.content.image && imgShop.content.caption === "Look" && !("text" in imgShop.content), "shopping image sem text")
+        const vidShop = createShoppingPayload({
+            format: "video",
+            video: "https://example.com/video.mp4",
+            caption: "Clip",
+            shop: { surface: 3, id: "facebook_store" }
+        })
+        assert(vidShop.ok && vidShop.content.video && vidShop.content.shop.id === "facebook_store", "shopping video + id loja")
+        const docShop = createShoppingPayload({
+            format: "document",
+            document: "https://example.com/file.pdf",
+            mimetype: "application/pdf",
+            shop: { surface: 1, id: "https://example.com" }
+        })
+        assert(docShop.ok && docShop.content.document && docShop.content.mimetype === "application/pdf", "shopping document")
+        const locShop = createShoppingPayload({
+            format: "location",
+            location: { degreesLatitude: 0, degreesLongitude: -1, name: "Test" },
+            shop: { surface: 1, id: "https://example.com" }
+        })
+        assert(locShop.ok && locShop.content.location.degreesLatitude === 0, "shopping location degreesLatitude")
+        const prodShop = createShoppingPayload({
+            format: "product",
+            title: "Product",
+            businessOwnerJid: "6281936886156@s.whatsapp.net",
+            product: {
+                productImage: { url: "https://example.com/prod.jpg" },
+                productId: "1234",
+                title: "Test Product",
+                description: "Foo",
+                currencyCode: "IDR",
+                priceAmount1000: "283000",
+                retailerId: "id1",
+                url: "https://example.com/p",
+                productImageCount: 1
+            },
+            shop: { surface: 1, id: "https://example.com" }
+        })
+        assert(prodShop.ok && prodShop.content.product.productId === "1234" && prodShop.content.businessOwnerJid.endsWith("@s.whatsapp.net"), "shopping product")
+        assert(createShoppingPayload({ format: "image", shop: { surface: 1, id: "https://example.com" } }).error === "MEDIA_MISSING", "image sem mídia recusada")
+        assert(createShoppingPayload({ text: "x", shop: { surface: 1 } }).error === "SHOP_ID_MISSING", "shop.id ausente recusado")
+
         // --- presets ---
         assert(loadPreset("payment-test").ok, "carrega payment-test")
+        assert(loadPreset("shopping-test").ok, "carrega shopping-test")
         assert(loadPreset("text-test").ok, "carrega text-test")
         assert(loadPreset("mention-test").ok, "carrega mention-test")
         assert(loadPreset("media-test").ok, "carrega media-test")
@@ -76,9 +145,12 @@ export async function runFloodPresetTests() {
         assert(pt.targetMode === "selected", "targetMode selected")
         const over = loadPreset("payment-test", { maxMessages: 999, concurrency: 50, interval: 10 }).preset
         assert(over.maxMessages <= 10 && over.concurrency <= 2 && over.interval >= 1000, "hard caps aplicados")
-        assert(listPresets().length === 4, "4 presets prontos")
+        assert(listPresets().length === 5, "5 presets prontos")
         assert(describePreset("payment-test").type === "payment", "describePreset")
+        assert(describePreset("shopping-test").type === "shopping", "describePreset shopping")
         assert(FLOOD_PRESETS["payment-test"].type === "payment", "preset payment no mapa")
+        assert(FLOOD_PRESETS["shopping-test"].type === "shopping", "preset shopping no mapa")
+        assert(FLOOD_PRESETS["shopping-test"].shop.surface === 1, "shopping-test surface 1")
 
         // --- velocidade clássica (FLOOD_MODOS) ---
         const s1 = resolveFloodSpeed("1")
@@ -94,6 +166,8 @@ export async function runFloodPresetTests() {
         assert(!resolveFloodSpeed("xyz").ok, "velocidade inválida")
         const payFast = applyFloodSpeed({ type: "payment", interval: 3000, concurrency: 2 }, s1)
         assert(payFast.interval === 50 && payFast.concurrency === 1, "payment rápido: 50ms concurrency 1")
+        const shopFast = applyFloodSpeed({ type: "shopping", interval: 3000, concurrency: 2 }, s1)
+        assert(shopFast.interval === 50 && shopFast.concurrency === 1, "shopping rápido: 50ms concurrency 1")
         const txtFast = applyFloodSpeed({ type: "text", interval: 2000, concurrency: 1 }, s1)
         assert(txtFast.interval === 50 && txtFast.concurrency === 8, "text rápido: lote 8")
         assert(formatFloodSpeedMenu().includes("Rápido"), "menu de velocidade clássico")
@@ -111,7 +185,7 @@ export async function runFloodPresetTests() {
         assert(customLoaded.ok && customLoaded.preset.text === "Loja" && customLoaded.preset.amount === 10, "carrega preset custom")
         assert(listPresets().some(p => p.id === "pix-loja"), "custom aparece na lista")
         CONFIG.floodCustomPresets = []
-        assert(listPresets().length === 4, "sem custom volta a 4")
+        assert(listPresets().length === 5, "sem custom volta a 5")
 
         // --- mention leak ---
         assert(!visibleTextHasPhones("olá pessoal"), "texto sem telefones")
@@ -218,6 +292,33 @@ export async function runFloodPresetTests() {
         })
         assert(!payBad.ok && payBad.error === "CURRENCY_UNSUPPORTED", "payment-test moeda XYZ recusada")
 
+        const shopDry = await runPresetJob({
+            presetId: "shopping-test",
+            dryRun: true,
+            ignoreCooldown: true,
+            targets: [G1, G2],
+            sendFn: async () => { throw new Error("não deveria enviar") }
+        })
+        assert(shopDry.ok && shopDry.dryRun, "shopping-test dry-run")
+        assert(shopDry.preset.type === "shopping" && shopDry.preset.shop.surface === 1, "payload shopping no job")
+        assert(shopDry.targets.length === 2, "shopping usa grupos escolhidos")
+
+        const shopBadSurface = await runPresetJob({
+            presetId: "shopping-test",
+            dryRun: true,
+            ignoreCooldown: true,
+            shoppingArgs: "Produto|Title|9|https://example.com"
+        })
+        assert(!shopBadSurface.ok && shopBadSurface.error === "SURFACE_INVALID", "shopping-test surface 9 recusada")
+
+        const shopIncomplete = await runPresetJob({
+            presetId: "shopping-test",
+            dryRun: true,
+            ignoreCooldown: true,
+            shoppingArgs: "Produto|Title"
+        })
+        assert(!shopIncomplete.ok && shopIncomplete.error === "USAGE", "shopping-test payload incompleto recusado")
+
         // --- envio mock real (não dry) limitado ---
         clearCooldown("text-test")
         let realSent = 0
@@ -314,6 +415,29 @@ export async function runFloodPresetTests() {
         const payContent = buildContent(loadPreset("payment-test").preset, { from: "x@s.whatsapp.net" })
         assert(payContent.payment && payContent.payment.amount === 25900, "builder payment amount1000")
         assert(!("requestPaymentMessage" in payContent), "content usa atalho payment, não proto cru")
+        assert(!("shop" in payContent), "payment não mistura shop")
+
+        const shopContent = buildContent(loadPreset("shopping-test").preset)
+        assert(shopContent.shop && shopContent.shop.surface === 1 && shopContent.text, "builder shopping shop+text")
+        assert(!("payment" in shopContent) && !("shopStorefrontMessage" in shopContent), "shopping usa atalho shop, não proto cru")
+
+        clearCooldown("shopping-test")
+        let shopSent = 0
+        const shopLive = await runPresetJob({
+            presetId: "shopping-test",
+            dryRun: false,
+            ignoreCooldown: true,
+            targets: [G1],
+            shoppingArgs: "Produto de teste|SYZYGY SHOP|2|https://en.wikipedia.org/wiki/QR_code",
+            sendFn: async (_jid, content) => {
+                shopSent++
+                assert(content.shop && content.shop.surface === 2, "envio mock usa shop.surface overlay")
+                assert(typeof content.text === "string", "envio mock shopping text")
+                assert(!content.payment, "shopping não envia payment")
+                return { ok: true }
+            }
+        })
+        assert(shopLive.ok && shopSent === 1, "envio mock shopping-test")
 
         // --- retry permanente aborta ---
         clearCooldown("text-test")
@@ -340,6 +464,7 @@ export async function runFloodPresetTests() {
         assert(TEXT_TO_ACTION["2"] === "painel_flood", "comando 2 flood clássico intacto")
         assert(TEXT_TO_ACTION["3"] === "painel_tudo", "comando 3 nuke intacto")
         assert(TEXT_TO_ACTION["paymenttest"] === "flood_preset_payment_test", "paymenttest mapeado")
+        assert(TEXT_TO_ACTION["shoppingtest"] === "flood_preset_shopping_test", "shoppingtest mapeado")
         assert(!TEXT_TO_ACTION["!pix"] && !TEXT_TO_ACTION["pix"], "não existe comando pix/!pix")
         assert(TEXT_TO_ACTION["floodstop"] === "flood_kill_on", "floodstop mapeado")
 

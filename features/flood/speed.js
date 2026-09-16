@@ -62,7 +62,7 @@ export function formatFloodSpeedMenu() {
 export function applyFloodSpeed(preset, cfg) {
     if (!preset || !cfg || !cfg.ok) return preset
     const type = String(preset.type || "text").toLowerCase()
-    const concurrency = type === "payment"
+    const concurrency = (type === "payment" || type === "shopping")
         ? 1
         : Math.min(8, Math.max(1, Number(cfg.lote) || 1))
     return {

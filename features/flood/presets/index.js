@@ -4,6 +4,7 @@ import { buildSendContent as buildText } from "./text.js"
 import { buildSendContent as buildMention } from "./mention.js"
 import { buildSendContent as buildMedia } from "./media.js"
 import { buildSendContent as buildPayment } from "./payment.js"
+import { buildSendContent as buildShopping } from "./shopping.js"
 import { buildSendContent as buildCustom } from "./custom.js"
 
 const BUILDERS = {
@@ -11,6 +12,7 @@ const BUILDERS = {
     mention: buildMention,
     media: buildMedia,
     payment: buildPayment,
+    shopping: buildShopping,
     custom: buildCustom
 }
 

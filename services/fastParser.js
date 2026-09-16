@@ -215,11 +215,11 @@ export async function handleFastCommand(chatJid, ownerKey, textRaw) {
             const { floodRouter } = await import("../features/flood/index.js")
             const name = String(partsRaw[2] || "").trim().toLowerCase()
             if (!name) {
-                await safeSendMessage(chatJid, { text: `❌ Flood preset: 2/preset/<nome>\nNomes: text-test, mention-test, media-test, payment-test ou id custom\nEx: 2/preset/payment-test  (depois grupos, conteúdo, qtd, velocidade 1-4)\nEx: 2/preset/payment-test/Pagamento do pedido|25.90|BRL\nCriar/apagar: menu flood presets → c / a` })
+                await safeSendMessage(chatJid, { text: `❌ Flood preset: 2/preset/<nome>\nNomes: text-test, mention-test, media-test, payment-test, shopping-test ou id custom\nEx: 2/preset/payment-test  (depois grupos, conteúdo, qtd, velocidade 1-4)\nEx: 2/preset/payment-test/Pagamento do pedido|25.90|BRL\nEx: 2/preset/shopping-test/Produto de teste|SYZYGY SHOP|1|https://en.wikipedia.org/wiki/QR_code\nCriar/apagar: menu flood presets → c / a` })
                 return true
             }
             const rest = partsRaw.slice(3).join("/").trim()
-            await floodRouter(chatJid, ownerKey, "run", { presetId: name, paymentArgs: rest || undefined })
+            await floodRouter(chatJid, ownerKey, "run", { presetId: name, paymentArgs: rest || undefined, shoppingArgs: rest || undefined })
             return true
         }
         if (partsRaw.length < 4) {

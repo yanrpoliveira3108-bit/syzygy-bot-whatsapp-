@@ -3,7 +3,7 @@
 
 import { CONFIG, salvarConfig } from "../../utils/config.js"
 
-const RESERVED = new Set(["text-test", "mention-test", "media-test", "payment-test"])
+const RESERVED = new Set(["text-test", "mention-test", "media-test", "payment-test", "shopping-test"])
 
 export function slugPresetId(raw) {
     return String(raw || "")

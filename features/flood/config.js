@@ -61,6 +61,26 @@ export const FLOOD_PRESETS = {
         concurrency: 1,
         cooldown: 30000,
         timeout: 15000
+    },
+    "shopping-test": {
+        id: "shopping-test",
+        type: "shopping",
+        format: "text",
+        text: "Produto de teste",
+        title: "SYZYGY SHOP",
+        subtitle: "Catalog",
+        footer: "SYZYGY",
+        shop: {
+            surface: 1,
+            id: "https://en.wikipedia.org/wiki/QR_code"
+        },
+        viewOnce: true,
+        targetMode: "selected",
+        maxMessages: 3,
+        interval: 3000,
+        concurrency: 1,
+        cooldown: 30000,
+        timeout: 15000
     }
 }
 
@@ -88,6 +108,20 @@ export function getPresetDef(id) {
             amount: custom.amount,
             currency: custom.currency,
             caption: custom.caption,
+            title: custom.title,
+            subtitle: custom.subtitle,
+            footer: custom.footer,
+            shop: custom.shop,
+            viewOnce: custom.viewOnce,
+            format: custom.format,
+            image: custom.image,
+            video: custom.video,
+            document: custom.document,
+            location: custom.location,
+            product: custom.product,
+            businessOwnerJid: custom.businessOwnerJid,
+            mimetype: custom.mimetype,
+            hasMediaAttachment: custom.hasMediaAttachment,
             targetMode: "selected",
             maxMessages: 10,
             interval: 3000,

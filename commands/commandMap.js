@@ -44,6 +44,7 @@ export const TEXT_TO_ACTION = {
     "floodpresets": "painel_flood_presets",
     "floodpreset": "painel_flood_presets",
     "paymenttest": "flood_preset_payment_test",
+    "shoppingtest": "flood_preset_shopping_test",
     "texttest": "flood_preset_text_test",
     "mentiontest": "flood_preset_mention_test",
     "mediatest": "flood_preset_media_test",

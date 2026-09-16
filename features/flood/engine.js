@@ -10,6 +10,7 @@ import { remainingCooldown, markJobEnd } from "./limiter.js"
 import { createQueue } from "./queue.js"
 import { isKillSwitchOn } from "./killswitch.js"
 import { createPaymentPayload } from "./payment.js"
+import { createShoppingPayload } from "./shopping.js"
 import { visibleTextHasPhones } from "./presets/mention.js"
 import { TARGETS_REQUIRED, extractTargetJids } from "./groups.js"
 import { resolveFloodSpeed, applyFloodSpeed } from "./speed.js"
@@ -72,6 +73,30 @@ export async function runPresetJob(opts = {}) {
         const payloadCheck = createPaymentPayload({ text: preset.text, amount: preset.amount, currency: preset.currency })
         if (!payloadCheck.ok) return { ok: false, error: payloadCheck.error, usage: payloadCheck.usage, metrics, dryRun }
         preset._payment = payloadCheck
+    }
+
+    if (preset.type === "shopping") {
+        if (!runtime.testMode && !opts.allowShoppingOutsideTest) {
+            return { ok: false, error: "SHOPPING_TEST_DISABLED", metrics, dryRun, type: "shopping" }
+        }
+        if (typeof opts.shoppingArgs === "string" && opts.shoppingArgs.trim()) {
+            const { parseShoppingArgs } = await import("./shopping.js")
+            const parsed = parseShoppingArgs(opts.shoppingArgs)
+            if (!parsed.ok) return { ok: false, error: parsed.error, usage: parsed.usage, metrics, dryRun, type: "shopping" }
+            preset = clampPresetLimits({
+                ...preset,
+                format: parsed.format,
+                text: parsed.text,
+                title: parsed.title,
+                subtitle: parsed.subtitle != null ? parsed.subtitle : preset.subtitle,
+                footer: parsed.footer != null ? parsed.footer : preset.footer,
+                shop: { surface: parsed.surface, id: parsed.shopId },
+                viewOnce: parsed.viewOnce
+            })
+        }
+        const payloadCheck = createShoppingPayload(preset)
+        if (!payloadCheck.ok) return { ok: false, error: payloadCheck.error, usage: payloadCheck.usage, metrics, dryRun, type: "shopping" }
+        preset._shopping = payloadCheck
     }
 
     let speedIn = null
@@ -169,7 +194,7 @@ export async function runPresetJob(opts = {}) {
     })
 
     runningJob = { presetId: preset.id, queue, startedAt }
-    logSafe(preset.type === "payment" ? "PAYMENT" : "FLOOD", `START preset=${preset.id} type=${preset.type} n=${targets.length} dryRun=${dryRun}`)
+    logSafe(jobTag(preset.type), `START preset=${preset.id} type=${preset.type} n=${targets.length} dryRun=${dryRun}`)
 
     let results = []
     try {
@@ -183,7 +208,7 @@ export async function runPresetJob(opts = {}) {
             let content
             try {
                 let from = opts.from
-                if (!from && (preset.type === "payment")) {
+                if (!from && (preset.type === "payment" || preset.type === "shopping")) {
                     try {
                         const { getSock } = await import("../../connection/socket.js")
                         from = getSock()?.user?.id
@@ -192,6 +217,7 @@ export async function runPresetJob(opts = {}) {
                 content = buildContent(preset, {
                     mentions,
                     from,
+                    businessOwnerJid: opts.businessOwnerJid || from,
                     buffer: opts.mediaBuffer
                 })
             } catch (e) {
@@ -231,7 +257,7 @@ export async function runPresetJob(opts = {}) {
 
     const aborted = results.some(r => r?.abort)
     const cancelled = results.some(r => r?.cancelled)
-    const tag = preset.type === "payment" ? "PAYMENT" : "FLOOD"
+    const tag = jobTag(preset.type)
     if (cancelled || aborted) {
         console.log(warn(`[${tag}] CANCELLED preset=${preset.id} sent=${metrics.sent} fail=${metrics.failed} cancel=${metrics.cancelled}`))
     } else if (metrics.failed && !metrics.sent) {
@@ -251,9 +277,11 @@ export async function runPresetJob(opts = {}) {
             cooldown: preset.cooldown,
             targetMode: preset.targetMode,
             floodModo: preset.floodModo,
-            text: preset.type === "payment" ? preset.text : undefined,
+            text: (preset.type === "payment" || preset.type === "shopping") ? preset.text : undefined,
             amount: preset.amount,
-            currency: preset.currency
+            currency: preset.currency,
+            title: preset.title,
+            shop: preset.shop
         },
         dryRun,
         targets: targets.map(maskJid),
@@ -284,6 +312,13 @@ async function defaultSend(jid, content) {
         if (Array.isArray(content.mentions) && content.mentions.length) payload.mentions = content.mentions
         return sock.sendMessage(jid, payload)
     }
+    if (content && content.shop) {
+        const payload = { ...content }
+        if (payload.product && !payload.businessOwnerJid && sock.user?.id) {
+            payload.businessOwnerJid = sock.user.id
+        }
+        return sock.sendMessage(jid, payload)
+    }
     const { safeSendMessage } = await import("../../services/groupService.js")
     return safeSendMessage(jid, content, 1)
 }
@@ -306,6 +341,14 @@ export function describePreset(id) {
         targetMode: p.targetMode,
         text: p.text || p.caption,
         amount: p.amount,
-        currency: p.currency
+        currency: p.currency,
+        title: p.title,
+        shop: p.shop
     }
+}
+
+function jobTag(type) {
+    if (type === "payment") return "PAYMENT"
+    if (type === "shopping") return "SHOPPING"
+    return "FLOOD"
 }

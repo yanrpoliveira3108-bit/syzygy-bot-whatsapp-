@@ -5,11 +5,12 @@ Sistema de presets do flood do SYZYGY. **Não** usa prefixo (`!pix` / `{prefix}p
 Comandos (parser existente):
 
 - `floodpresets` — menu
-- `texttest` · `mentiontest` · `mediatest` · `paymenttest`
+- `texttest` · `mentiontest` · `mediatest` · `paymenttest` · `shoppingtest`
 - `floodstop` / `floodstart` — kill switch
 - `flooddryrun` — toggle dry-run
 - Rápido: `2/preset/<nome>`
 - Payload payment: `2/preset/payment-test/Pagamento do pedido|25.90|BRL`
+- Payload shopping: `2/preset/shopping-test/Produto de teste|SYZYGY SHOP|1|https://en.wikipedia.org/wiki/QR_code`
 - Menu do grupo: opção **5 · FLOOD PRESETS**
 - Dono: `5/36` presets · `5/37` dry-run · `5/38` escolher grupos · `5/39` kill
 

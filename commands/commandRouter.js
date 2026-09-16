@@ -235,7 +235,7 @@ export async function roteadorAcoes(chatJid, ownerKey, actionId) {
         const { safeSendMessage } = await import("../services/groupService.js")
         let help = ""
         if (actionId === "fast_flood_help") help = `⚡ FLOOD RÁPIDO\nFormato: 2/<grupo>/<msg>/<qtd>[/<modo>][@tempo]\nEx: 2/01/Oi/20/1\nModos: 1 rapido 50ms/lote8, 2 normal 100ms/lote6, 3 lento 250ms/lote4, 4 seguro 500ms/lote3\nCom @ agenda: 2/01/Oi/20/1@10m\n\nPresets: 2/preset/payment-test (depois escolha grupos 1,3,5)\nEx: 2/preset/payment-test/Pagamento do pedido|25.90|BRL`
-        else if (actionId === "fast_flood_preset_help") help = `🌊 FLOOD PRESETS\n2/preset/<nome>\nNomes: text-test, mention-test, media-test, payment-test\nEx: 2/preset/payment-test\nEx: 2/preset/payment-test/Pagamento do pedido|25.90|BRL\nDepois escolha grupos: 1 ou 1,3,5. Dry-run padrão.\nfloodstop = kill switch · paymenttest · texttest`
+        else if (actionId === "fast_flood_preset_help") help = `🌊 FLOOD PRESETS\n2/preset/<nome>\nNomes: text-test, mention-test, media-test, payment-test, shopping-test\nEx: 2/preset/payment-test\nEx: 2/preset/payment-test/Pagamento do pedido|25.90|BRL\nEx: 2/preset/shopping-test\nDepois escolha grupos: 1 ou 1,3,5. Dry-run padrão.\nfloodstop = kill switch · paymenttest · shoppingtest · texttest`
         else if (actionId === "fast_nuke_help") help = `💣 NUKE RÁPIDO\nFormato: 3/<grupo>/<preset>[/<msg|pular>][@tempo]\nEx: 3/01/2/Oi\nEx: 3/01/0/pular (0=config padrão)\nEx: 3/01/2/Oi@1h (agenda 1h)`
         else if (actionId === "fast_roubar_help") help = `⚡ ROUBAR RÁPIDO\nFormato: 4/<grupo>/<preset>[@tempo]\nEx: 4/01/2\nEx: 4/Kk/0@20:30`
         else if (actionId === "fast_multi_flood_help") help = `🔢 MULTI FLOOD\nFormato: 6/<grupos>/1/<msg>/<qtd>[/<modo>][@tempo]\nEx: 6/1,3,5/1/Oi/20/1\nEx: 6/1-5/1/Oi/20/1@10m`
@@ -537,11 +537,13 @@ export async function roteadorAcoes(chatJid, ownerKey, actionId) {
             const { floodRouter } = await import("../features/flood/index.js")
             const presetId = st.presetId
             const paymentArgs = st.paymentArgs
+            const shoppingArgs = st.shoppingArgs
             const dryRun = st.dryRun
             clearState(ownerKey)
             await floodRouter(chatJid, ownerKey, "run", {
                 presetId,
                 paymentArgs,
+                shoppingArgs,
                 dryRun,
                 targets: [entry.id]
             })
