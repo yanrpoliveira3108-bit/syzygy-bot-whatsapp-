@@ -3,6 +3,7 @@ node_modules/
 .env.*
 !.env.example
 
+sessao/
 auth/
 auth_info/
 session/
@@ -10,6 +11,10 @@ sessions/
 baileys_auth/
 creds.json
 *.session
+pre-key-*.json
+sender-key-*.json
+sender-key-memory-*.json
+app-state-sync-*.json
 
 *.log
 logs/

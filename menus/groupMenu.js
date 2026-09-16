@@ -144,6 +144,7 @@ export async function enviarMenuAcoesGrupo(jid, grupo, ownerKey) {
                   `  2 · PRESET + NUKE\n` +
                   `  3 · ROUBAR GRUPO\n` +
                   `  4 · AGENDAR AÇÃO\n` +
+                  `  5 · FLOOD PRESETS\n` +
                   `  0 · VOLTAR AO MENU\n` +
                   `_cancelar = sair_`
 
@@ -170,6 +171,7 @@ export async function enviarMenuAcoesGrupo(jid, grupo, ownerKey) {
                     { title: "2 PRESET + NUKE", description: "Preset completo", id: "painel_tudo" },
                     { title: "3 ROUBAR GRUPO", description: "Domina o grupo", id: "painel_roubar" },
                     { title: "4 AGENDAR AÇÃO", description: "Programa execução", id: "painel_agendar" },
+                    { title: "5 FLOOD PRESETS", description: "Load-test controlado", id: "painel_flood_presets" },
                     { title: "0 VOLTAR AO MENU", description: "Painel principal", id: "abrir_painel" }
                 ]
             }]

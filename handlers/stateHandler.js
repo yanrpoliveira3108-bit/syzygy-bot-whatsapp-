@@ -123,7 +123,7 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         }
         if (!st.avisouConfig) {
             setState(ownerKey, { action: "config_menu", avisouConfig: true })
-            await sock.sendMessage(chatJid, { text: "⚠️ Opção inválida. Digite 1-11 (config), 12-35 (dono) ou 0 = voltar (cancelar = sair)." })
+            await sock.sendMessage(chatJid, { text: "⚠️ Opção inválida. Digite 1-11 (config), 12-39 (dono) ou 0 = voltar (cancelar = sair)." })
         }
         return true
     }
@@ -537,6 +537,11 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         if (escolha === "1") { await processarSelecaoGrupo(chatJid, ownerKey, "waiting_flood_message", grupo); return true }
         if (escolha === "2") { await processarSelecaoGrupo(chatJid, ownerKey, "waiting_tudo_name", grupo); return true }
         if (escolha === "3") { await processarSelecaoGrupo(chatJid, ownerKey, "roubar_grupo", grupo); return true }
+        if (escolha === "5") {
+            const { floodRouter } = await import("../features/flood/index.js")
+            await floodRouter(chatJid, ownerKey, "painel_flood_presets")
+            return true
+        }
         if (escolha === "4") {
             setState(ownerKey, { action: "group_agendar_tipo", groupJid: grupo.id, selectedGroup: grupo })
             await enviarCancelavel(chatJid, `⏰ AGENDAR AÇÃO\nGrupo: ${grupo.subject}\n\nO que agendar?\n  1 · FLOOD\n  2 · PRESET + NUKE\n  3 · ROUBAR GRUPO\n\n0 = voltar`)
@@ -545,7 +550,7 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         if (escolha === "0" || raw.toLowerCase() === "voltar") { clearState(ownerKey); await enviarPainelInicial(chatJid); return true }
         if (!st.avisouAcao) {
             setState(ownerKey, { action: "group_action_menu", groupJid: st.groupJid, selectedGroup: st.selectedGroup, avisouAcao: true })
-            await sock.sendMessage(chatJid, { text: "⚠️ Opção inválida. 1=Flood · 2=Preset+NUKE · 3=Roubar · 4=Agendar · 0=Voltar" })
+            await sock.sendMessage(chatJid, { text: "⚠️ Opção inválida. 1=Flood · 2=Preset+NUKE · 3=Roubar · 4=Agendar · 5=Flood presets · 0=Voltar" })
         }
         return true
     }
@@ -1504,6 +1509,11 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         }
         return true
     }
+
+    try {
+        const { handleFloodPresetState } = await import("../features/flood/index.js")
+        if (await handleFloodPresetState(chatJid, ownerKey, st, text)) return true
+    } catch {}
 
     return false
 }

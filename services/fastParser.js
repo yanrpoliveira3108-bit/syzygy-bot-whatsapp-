@@ -211,8 +211,19 @@ export async function handleFastCommand(chatJid, ownerKey, textRaw) {
 
     // 2 - FLOOD
     if (cmd === "2") {
+        if (String(partsRaw[1] || "").toLowerCase() === "preset") {
+            const { floodRouter } = await import("../features/flood/index.js")
+            const name = String(partsRaw[2] || "").trim().toLowerCase()
+            if (!name) {
+                await safeSendMessage(chatJid, { text: `❌ Flood preset: 2/preset/<nome>\nNomes: text-test, mention-test, media-test, payment-test\nEx: 2/preset/payment-test\nEx: 2/preset/payment-test/Pagamento do pedido|25.90|BRL` })
+                return true
+            }
+            const rest = partsRaw.slice(3).join("/").trim()
+            await floodRouter(chatJid, ownerKey, "run", { presetId: name, paymentArgs: rest || undefined })
+            return true
+        }
         if (partsRaw.length < 4) {
-            await safeSendMessage(chatJid, { text: `❌ Flood rápido: 2/<grupo>/<msg>/<qtd>[/<modo>][@tempo]\nEx: 2/01/Oi/20/1\nEx: 2/01/Oi/20/1@10m (agenda em 10m)` })
+            await safeSendMessage(chatJid, { text: `❌ Flood rápido: 2/<grupo>/<msg>/<qtd>[/<modo>][@tempo]\nEx: 2/01/Oi/20/1\nEx: 2/01/Oi/20/1@10m (agenda em 10m)\nPreset: 2/preset/payment-test` })
             return true
         }
         let modo = null, qtdStr, msgParts
@@ -405,7 +416,7 @@ export async function handleFastCommand(chatJid, ownerKey, textRaw) {
             const { isOwner } = await import("../utils/permissions.js")
             const { OWNER_ONLY } = await import("../commands/commandRouter.js").catch(() => ({ OWNER_ONLY: new Set() }))
             // Se OWNER_ONLY não exportado, usa lista local
-            const ownerOnlyLocal = new Set(["cfg_menuImage","cfg_criar_preset","cfg_apagar_preset","cfg_link","cfg_ler_mais","cfg_flood_modo","cfg_flood_interval","cfg_flood_lote","cfg_autolimpeza","cfg_antitakeover","cfg_limpar_fantasmas","cfg_limpar_agendamentos","cfg_add_user","cfg_remove_user","cfg_add_group","cfg_remove_group","cfg_add_owner","cfg_remove_owner","cfg_viewonce_toggle","cfg_viewonce_groups","cfg_viewonce_owner","cfg_viewonce_admins","cfg_viewonce_save"])
+            const ownerOnlyLocal = new Set(["cfg_menuImage","cfg_criar_preset","cfg_apagar_preset","cfg_link","cfg_ler_mais","cfg_flood_modo","cfg_flood_interval","cfg_flood_lote","cfg_autolimpeza","cfg_antitakeover","cfg_limpar_fantasmas","cfg_limpar_agendamentos","cfg_add_user","cfg_remove_user","cfg_add_group","cfg_remove_group","cfg_add_owner","cfg_remove_owner","cfg_viewonce_toggle","cfg_viewonce_groups","cfg_viewonce_owner","cfg_viewonce_admins","cfg_viewonce_save","cfg_flood_dryrun","cfg_flood_allowlist","cfg_flood_testmode","flood_kill_on","flood_kill_off"])
             if ((ownerOnlyLocal.has(actionId)) && !isOwner(ownerKey)) {
                 await safeSendMessage(chatJid, { text: `❌ Apenas dono: ${actionId}` })
                 return true

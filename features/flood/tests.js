@@ -1,0 +1,248 @@
+// features/flood/tests.js
+// Testes do engine de presets (sem WhatsApp real).
+
+import { parseAmount, parseCurrency, parsePaymentArgs, createPaymentPayload, buildPaymentContent, formatPaymentError, getPaymentApiInfo } from "./payment.js"
+import { loadPreset, listPresets, buildContent } from "./presets/index.js"
+import { FLOOD_PRESETS } from "./config.js"
+import { normalizeTargetJid, isOnAllowlist, filterAllowlist, addAllowlistJid, removeAllowlistJid, BLOCKED_TARGET, ALLOWLIST_EMPTY } from "./allowlist.js"
+import { remainingCooldown, markJobEnd, clearCooldown, classifyError, withTimeout, createLimiter } from "./limiter.js"
+import { createQueue } from "./queue.js"
+import { isKillSwitchOn, setKillSwitch } from "./killswitch.js"
+import { runPresetJob, isFloodEngineRunning, cancelRunningJob, describePreset } from "./engine.js"
+import { visibleTextHasPhones } from "./presets/mention.js"
+
+function assert(cond, msg) {
+    if (!cond) throw new Error(`FAIL: ${msg}`)
+    console.log(`✓ ${msg}`)
+}
+
+export async function runFloodPresetTests() {
+    console.log("=== TESTES FLOOD PRESETS SYZYGY ===")
+
+    const { carregarConfig, CONFIG } = await import("../../utils/config.js")
+    carregarConfig()
+    const snap = {
+        kill: CONFIG.floodKillSwitch,
+        dry: CONFIG.floodDryRun,
+        test: CONFIG.floodTestMode,
+        allow: [...(CONFIG.floodAllowlist || [])],
+        retries: CONFIG.floodMaxRetries
+    }
+
+    try {
+        CONFIG.floodKillSwitch = false
+        CONFIG.floodDryRun = true
+        CONFIG.floodTestMode = true
+        CONFIG.floodAllowlist = []
+        CONFIG.floodMaxRetries = 1
+        setKillSwitch(false)
+        clearCooldown()
+
+        // --- parser ---
+        assert(parsePaymentArgs("").error === "USAGE", "parser vazio → USAGE")
+        assert(parsePaymentArgs("teste").error === "USAGE", "parser só texto → USAGE")
+        const p1 = parsePaymentArgs("teste|10|BRL")
+        assert(p1.ok && p1.amount === 10 && p1.amount1000 === 10000 && p1.currency === "BRL", "!pix-equivalent teste|10|BRL")
+        const p2 = parsePaymentArgs("teste|10.50|BRL")
+        assert(p2.ok && p2.amount1000 === 10500, "decimal 10.50 → 10500")
+        const p3 = parsePaymentArgs("teste|10,50|BRL")
+        assert(p3.ok && p3.amount1000 === 10500, "vírgula decimal 10,50")
+        assert(parsePaymentArgs("teste|10|ABC").error === "CURRENCY_UNSUPPORTED", "moeda ABC inválida")
+        assert(parsePaymentArgs("teste|abc|BRL").error === "AMOUNT_INVALID", "valor abc inválido")
+        assert(parsePaymentArgs("teste|-10|BRL").error === "AMOUNT_NEGATIVE", "valor negativo")
+        assert(parseAmount("Infinity").error === "AMOUNT_INVALID", "Infinity rejeitado")
+        assert(parseAmount("NaN").error === "AMOUNT_INVALID", "NaN rejeitado")
+        assert(parseCurrency("usd").ok && parseCurrency("usd").value === "USD", "moeda lowercase → uppercase")
+        const payload = createPaymentPayload({ text: "Pagamento de teste", amount: 25.90, currency: "BRL" })
+        assert(payload.ok && payload.amount1000 === 25900 && payload.content.amount === 25900, "createPaymentPayload 25.90 BRL")
+        const built = buildPaymentContent(payload, { from: "5511999@s.whatsapp.net" })
+        assert(built.payment && built.payment.note === "Pagamento de teste" && built.payment.currency === "BRL", "buildPaymentContent usa API payment")
+        assert(getPaymentApiInfo().proto === "requestPaymentMessage", "API documentada = requestPaymentMessage")
+        assert(formatPaymentError("USAGE").includes("texto|valor|moeda"), "mensagem de uso amigável")
+
+        // --- presets ---
+        assert(loadPreset("payment-test").ok, "carrega payment-test")
+        assert(loadPreset("text-test").ok, "carrega text-test")
+        assert(loadPreset("mention-test").ok, "carrega mention-test")
+        assert(loadPreset("media-test").ok, "carrega media-test")
+        assert(!loadPreset("allContacts").ok, "não existe allContacts")
+        const pt = loadPreset("payment-test").preset
+        assert(pt.maxMessages === 3 && pt.interval === 3000 && pt.concurrency === 1 && pt.cooldown === 30000, "payment-test limites padrão")
+        assert(pt.targetMode === "allowlist", "targetMode allowlist")
+        const over = loadPreset("payment-test", { maxMessages: 999, concurrency: 50, interval: 10 }).preset
+        assert(over.maxMessages <= 10 && over.concurrency <= 2 && over.interval >= 1000, "hard caps aplicados")
+        assert(listPresets().length === 4, "4 presets prontos")
+        assert(describePreset("payment-test").type === "payment", "describePreset")
+        assert(FLOOD_PRESETS["payment-test"].type === "payment", "preset payment no mapa")
+
+        // --- mention leak ---
+        assert(!visibleTextHasPhones("olá pessoal"), "texto sem telefones")
+        assert(visibleTextHasPhones("@551199999999"), "detecta leak de número")
+
+        // --- allowlist ---
+        assert(filterAllowlist(["5511999999999@s.whatsapp.net"]).error === ALLOWLIST_EMPTY, "allowlist vazia")
+        const add = addAllowlistJid("5511999999999")
+        assert(add.ok && isOnAllowlist("5511999999999@s.whatsapp.net"), "add allowlist")
+        addAllowlistJid("5511888888888")
+        const fil = filterAllowlist(["5511999999999", "5511777777777"])
+        assert(fil.allowed.length === 1 && fil.blocked.length === 1 && fil.blocked[0].reason === BLOCKED_TARGET, "BLOCKED_TARGET fora da lista")
+        assert(normalizeTargetJid("5511999999999").endsWith("@s.whatsapp.net"), "normaliza número para JID")
+        removeAllowlistJid("5511888888888")
+        assert(!isOnAllowlist("5511888888888"), "remove allowlist")
+
+        // --- limiter / timeout / retry classification ---
+        assert(classifyError({ message: "rate-overlimit" }).retry === true && classifyError({ message: "rate-overlimit" }).abort === false, "rate limit espera")
+        assert(classifyError({ message: "connection closed" }).abort === true, "disconnect aborta")
+        assert(classifyError({ code: "TIMEOUT" }).retry === true, "timeout pode retry")
+        let timed = false
+        try {
+            await withTimeout(() => new Promise(r => setTimeout(r, 80)), 20)
+        } catch (e) {
+            timed = e.code === "TIMEOUT"
+        }
+        assert(timed, "timeout dispara")
+        const lim = createLimiter({ interval: 30, concurrency: 1, timeout: 1000, key: "t" })
+        const t0 = Date.now()
+        await lim.schedule(async () => 1)
+        await lim.schedule(async () => 2)
+        assert(Date.now() - t0 >= 25, "interval entre envios")
+
+        // --- queue cancel ---
+        const q = createQueue({ interval: 5, concurrency: 1, timeout: 500, maxRetries: 1 })
+        q.cancel("KILL_SWITCH")
+        const qr = await q.runItems([{ target: "x" }], async () => ({ ok: true }))
+        assert(qr[0].cancelled, "fila cancelada não envia")
+
+        // --- kill switch ---
+        setKillSwitch(true)
+        assert(isKillSwitchOn(), "kill switch on")
+        const killed = await runPresetJob({
+            presetId: "text-test",
+            dryRun: true,
+            sendFn: async () => ({ sent: true })
+        })
+        assert(killed.error === "KILL_SWITCH", "engine recusa com kill switch")
+        setKillSwitch(false)
+
+        // --- dry-run + allowlist + métricas ---
+        CONFIG.floodAllowlist = ["5511999999999@s.whatsapp.net", "5511888888888@s.whatsapp.net"]
+        let sentCount = 0
+        const dry = await runPresetJob({
+            presetId: "text-test",
+            dryRun: true,
+            ignoreCooldown: true,
+            sendFn: async () => { sentCount++; return { sent: true } }
+        })
+        assert(dry.ok && dry.dryRun === true, "dry-run ok")
+        assert(sentCount === 0, "dry-run não chama envio real")
+        assert(dry.metrics.queued >= 1 && dry.metrics.sent >= 1, "métricas queued/sent no dry-run")
+        assert(typeof dry.metrics.duration === "number" && typeof dry.metrics.averageLatency === "number", "duration + averageLatency")
+
+        // --- payment dry-run payload ---
+        const pay = await runPresetJob({
+            presetId: "payment-test",
+            dryRun: true,
+            ignoreCooldown: true,
+            paymentArgs: "Pagamento do pedido|25.90|BRL",
+            sendFn: async () => { throw new Error("não deveria enviar") }
+        })
+        assert(pay.ok && pay.dryRun, "payment-test dry-run")
+        assert(pay.preset.currency === "BRL" && pay.preset.amount === 25.9, "payload payment no job")
+
+        const payBad = await runPresetJob({
+            presetId: "payment-test",
+            dryRun: true,
+            ignoreCooldown: true,
+            paymentArgs: "teste|10|XYZ"
+        })
+        assert(!payBad.ok && payBad.error === "CURRENCY_UNSUPPORTED", "payment-test moeda XYZ recusada")
+
+        // --- envio mock real (não dry) limitado ---
+        clearCooldown("text-test")
+        let realSent = 0
+        const live = await runPresetJob({
+            presetId: "text-test",
+            dryRun: false,
+            ignoreCooldown: true,
+            sendFn: async (jid, content) => {
+                realSent++
+                assert(typeof content.text === "string", "text content")
+                return { jid }
+            }
+        })
+        assert(live.ok && realSent === live.metrics.sent, "envio mock text-test")
+        assert(realSent <= 3, "maxMessages respeitado")
+
+        // --- cooldown ---
+        markJobEnd("text-test")
+        const cd = remainingCooldown("text-test", 30000)
+        assert(cd > 0, "cooldown registrado")
+        const blockedCd = await runPresetJob({
+            presetId: "text-test",
+            dryRun: true,
+            sendFn: async () => ({})
+        })
+        assert(blockedCd.error === "COOLDOWN", "cooldown bloqueia segundo job")
+        clearCooldown("text-test")
+
+        // --- mention sem leak ---
+        const men = await runPresetJob({
+            presetId: "mention-test",
+            dryRun: true,
+            ignoreCooldown: true,
+            resolveMentions: async () => ["5511999999999@s.whatsapp.net"],
+            sendFn: async (_jid, content) => {
+                assert(!visibleTextHasPhones(content.text), "mention não imprime números")
+                return {}
+            }
+        })
+        assert(men.ok, "mention-test dry-run")
+
+        // --- payment content shape ---
+        const payContent = buildContent(loadPreset("payment-test").preset, { from: "x@s.whatsapp.net" })
+        assert(payContent.payment && payContent.payment.amount === 25900, "builder payment amount1000")
+        assert(!("requestPaymentMessage" in payContent), "content usa atalho payment, não proto cru")
+
+        // --- retry permanente aborta ---
+        clearCooldown("text-test")
+        let tries = 0
+        const perm = await runPresetJob({
+            presetId: "text-test",
+            dryRun: false,
+            ignoreCooldown: true,
+            sendFn: async () => {
+                tries++
+                throw new Error("forbidden")
+            }
+        })
+        assert(perm.aborted || !perm.ok, "erro permanente não ok")
+        assert(tries === 1, "erro permanente não retenta em loop")
+
+        // --- concurrency lock ---
+        assert(isFloodEngineRunning() === false, "engine idle")
+        assert(typeof cancelRunningJob === "function", "cancelRunningJob exportado")
+
+        // --- regressão: presets conhecidos e nenhum !pix ---
+        const { TEXT_TO_ACTION } = await import("../../commands/commandMap.js")
+        assert(TEXT_TO_ACTION["2"] === "painel_flood", "comando 2 flood clássico intacto")
+        assert(TEXT_TO_ACTION["3"] === "painel_tudo", "comando 3 nuke intacto")
+        assert(TEXT_TO_ACTION["paymenttest"] === "flood_preset_payment_test", "paymenttest mapeado")
+        assert(!TEXT_TO_ACTION["!pix"] && !TEXT_TO_ACTION["pix"], "não existe comando pix/!pix")
+        assert(TEXT_TO_ACTION["floodstop"] === "flood_kill_on", "floodstop mapeado")
+
+        console.log("=== TODOS TESTES FLOOD PRESETS PASSARAM ===")
+        return { ok: true, passed: true }
+    } finally {
+        CONFIG.floodKillSwitch = snap.kill
+        CONFIG.floodDryRun = snap.dry
+        CONFIG.floodTestMode = snap.test
+        CONFIG.floodAllowlist = snap.allow
+        CONFIG.floodMaxRetries = snap.retries
+        setKillSwitch(false)
+        clearCooldown()
+    }
+}
+
+if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop())) {
+    runFloodPresetTests().catch(e => { console.error(e); process.exit(1) })
+}

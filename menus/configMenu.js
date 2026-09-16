@@ -31,7 +31,9 @@ const CONFIG_ROTULOS_DONO = [
     ["24", "+ Add ADM do bot"], ["25", "- Remover ADM"], ["26", "+ Add grupo autz"],
     ["27", "- Remover grupo"], ["28", "+ Add dono extra"], ["29", "- Remover dono"],
     ["30", "ViewOnce ON/OFF"], ["31", "VO -> grupos"], ["32", "VO -> owner"],
-    ["33", "VO -> ADMs"], ["34", "VO salvar"], ["35", "Voltar ao menu"]
+    ["33", "VO -> ADMs"], ["34", "VO salvar"], ["35", "Voltar ao menu"],
+    ["36", "Flood presets"], ["37", "Flood dry-run"], ["38", "Flood allowlist"],
+    ["39", "Flood kill switch"]
 ]
 
 // [v55] Renderer interativo do painel de configuração — MESMA fonte
@@ -48,7 +50,7 @@ async function enviarConfigInterativo(jid, ownerKey, modo = "adm") {
     }))
     const botoes = [criarBotao("single_select", {
         title: dono ? " DONO" : " CONFIG",
-        text: dono ? "Comandos do dono (12-35)" : "Configuracoes (1-11)",
+        text: dono ? "Comandos do dono (12-39)" : "Configuracoes (1-11)",
         buttonText: " SELECIONAR",
         sections: [{ title: dono ? "👑 COMANDOS DO DONO" : "👤 CONFIGURACOES", rows }]
     })]
@@ -56,7 +58,7 @@ async function enviarConfigInterativo(jid, ownerKey, modo = "adm") {
         ? `👑 𝗖𝗢𝗠𝗔𝗡𝗗𝗢𝗦 𝗗𝗢 𝗗𝗢𝗡𝗢
 🔒 acesso restrito ao dono
 
-_Toque em uma opção (12-35) ou digite o número_`
+_Toque em uma opção (12-39) ou digite o número_`
         : `⚙️ 𝗖𝗢𝗡𝗙𝗜𝗚𝗨𝗥𝗔𝗖̧𝗢𝗘𝗦
 👤 ADMs do bot podem usar
 
@@ -104,7 +106,11 @@ export const CONFIG_OPCOES = {
     "32": "cfg_viewonce_owner",
     "33": "cfg_viewonce_admins",
     "34": "cfg_viewonce_save",
-    "35": "abrir_painel"
+    "35": "abrir_painel",
+    "36": "painel_flood_presets",
+    "37": "cfg_flood_dryrun",
+    "38": "cfg_flood_allowlist",
+    "39": "flood_kill_on"
 }
 
 export async function enviarSubmenuConfig(jid, ownerKey, modo = "adm") {
@@ -168,9 +174,15 @@ export async function enviarSubmenuConfig(jid, ownerKey, modo = "adm") {
         t += `┃ ⬥ 33 · → ADMs: ${voAdmins}\n`
         t += `┃ ⬥ 34 · Salvar: ${voSave}\n`
         t += `╰───────────────────────\n`
+        t += `╭─〔 🌊 𝗙𝗟𝗢𝗢𝗗 𝗣𝗥𝗘𝗦𝗘𝗧𝗦 〕───────\n`
+        t += `┃ ⬥ 36 · Flood presets (load-test)\n`
+        t += `┃ ⬥ 37 · Dry-run: ${CONFIG.floodDryRun !== false ? "LIGADO" : "DESLIGADO"}\n`
+        t += `┃ ⬥ 38 · Allowlist [${(CONFIG.floodAllowlist || []).length}]\n`
+        t += `┃ ⬥ 39 · Kill switch: ${CONFIG.floodKillSwitch ? "ON" : "OFF"}\n`
+        t += `╰───────────────────────\n`
         t += ` 35 · ⬅️ Voltar ao menu\n\n`
         t += `_📖 LIGADO: mensagens dobram após o título\n(⚡ SYZYGY) via caracteres invisíveis; o corte\né do app do WhatsApp e pode não dobrar no\niPhone. DESLIGADO: mostra tudo inteiro._\n\n`
-        t += `_Digite o número (12-35) · cancelar = sair_\n`
+        t += `_Digite o número (12-39) · cancelar = sair_\n`
         t += `▬▬▬▬▬▬▬▬▬▬▬▬▬\n⚔️ SYZYGY`
         await safeSendMessage(jid, { text: t }, 0)
         return

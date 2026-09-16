@@ -275,6 +275,7 @@ export function getFloodConfig(modoOuIntervalo) {
 
 // [v29] Flood ultra rápido
 export async function executarFlood(jid, msg, qtd, intervaloOuOpts = 100) {
+    if (isKillSwitchOn()) throw new Error("FLOOD_KILL_SWITCH ativo")
     if (isProtectedGroup(jid)) throw new Error("Grupo protegido (autorizado) — FLOOD bloqueado")
     const sock = getSock()
     qtd = Math.min(Math.max(1, qtd), MAX_FLOOD)

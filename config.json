@@ -29,5 +29,11 @@
     "187003631042741"
   ],
   "donosExtras": [],
-  "uiDebug": false
+  "uiDebug": false,
+  "floodKillSwitch": false,
+  "floodDryRun": true,
+  "floodTestMode": true,
+  "floodAllowlist": [],
+  "floodMaxRetries": 1,
+  "floodTimeoutMs": 15000
 }

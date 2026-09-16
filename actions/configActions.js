@@ -39,7 +39,8 @@ export async function cfgStatus(chatJid) {
         txt += `📜 Histórico: ${rel.total} (${rel.ultimas24h} 24h)\n`
         txt += `⏰ Agendamentos: ${pend} pendentes / ${ag.length} total\n`
         txt += `👤 ADMs bot: ${getAuthorizedUsers().length} | 👥 Grupos autorizados: ${getAuthorizedGroups().length}\n`
-        txt += `🧹 Auto-limpeza: ${CONFIG.autoLimpeza ? "ON" : "OFF"} | 🛡️ Anti: ${CONFIG.antiTakeover ? "ON" : "OFF"}`
+        txt += `🧹 Auto-limpeza: ${CONFIG.autoLimpeza ? "ON" : "OFF"} | 🛡️ Anti: ${CONFIG.antiTakeover ? "ON" : "OFF"}\n`
+        txt += `🌊 Presets: dry-run ${CONFIG.floodDryRun !== false ? "ON" : "OFF"} | kill ${CONFIG.floodKillSwitch ? "ON" : "OFF"} | allow ${(CONFIG.floodAllowlist || []).length}`
         await enviarVoltar(chatJid, txt)
     } catch (e) {
         const arr = Object.values(rt().cachedGroups)

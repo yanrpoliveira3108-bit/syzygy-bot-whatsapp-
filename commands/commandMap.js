@@ -39,5 +39,15 @@ export const TEXT_TO_ACTION = {
     "botstatus": "cfg_status",
     "!botstatus": "cfg_status",
     "bloks": "server_inspector",
-    "!bloks": "server_inspector"
+    "!bloks": "server_inspector",
+
+    "floodpresets": "painel_flood_presets",
+    "floodpreset": "painel_flood_presets",
+    "paymenttest": "flood_preset_payment_test",
+    "texttest": "flood_preset_text_test",
+    "mentiontest": "flood_preset_mention_test",
+    "mediatest": "flood_preset_media_test",
+    "floodstop": "flood_kill_on",
+    "floodstart": "flood_kill_off",
+    "flooddryrun": "cfg_flood_dryrun"
 }
