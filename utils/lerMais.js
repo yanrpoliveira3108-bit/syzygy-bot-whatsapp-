@@ -29,6 +29,7 @@ const MIN_RESTO = 4           // só aplica em mensagens com algo após a 1ª li
 export function aplicarLerMais(texto) {
     try {
         if (!CONFIG.lerMais || typeof texto !== "string") return texto
+        if (texto.startsWith("🛍️") || texto.startsWith("💳 CONTEÚDO")) return texto
         const i = texto.indexOf("\n")
         if (i < 0) return texto                       // 1 linha só: não mexe
         if (texto.slice(i + 1).trim().length < MIN_RESTO) return texto

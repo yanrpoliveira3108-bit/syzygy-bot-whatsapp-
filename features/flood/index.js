@@ -172,16 +172,18 @@ async function reply(chatJid, text) {
 }
 
 function flowPayload(extra = {}) {
-    return {
-        presetId: extra.presetId,
-        paymentArgs: extra.paymentArgs,
-        shoppingArgs: extra.shoppingArgs,
-        shoppingBody: extra.shoppingBody,
-        dryRun: extra.dryRun,
-        qtd: extra.qtd,
-        floodModo: extra.floodModo,
-        targets: extra.targets
+    const o = {}
+    for (const k of ["presetId", "contentKind", "paymentArgs", "shoppingArgs", "shoppingBody", "dryRun", "qtd", "floodModo", "targets"]) {
+        if (extra[k] !== undefined) o[k] = extra[k]
     }
+    return o
+}
+
+function isShoppingContentState(st) {
+    if (!st) return false
+    if (st.contentKind === "shopping") return true
+    const def = getPresetDef(st.presetId)
+    return def?.type === "shopping"
 }
 
 function contentPrompt(presetId) {
@@ -219,13 +221,13 @@ async function promptGroupPick(chatJid, ownerKey, extra = {}) {
 async function continueWizard(chatJid, ownerKey, extra = {}) {
     const def = getPresetDef(extra.presetId)
     if (def?.type === "payment" && (extra.paymentArgs == null || extra.paymentArgs === "")) {
-        setState(ownerKey, { action: "flood_preset_pick_content", ...flowPayload(extra) })
+        setState(ownerKey, { action: "flood_preset_pick_content", contentKind: "payment", ...flowPayload(extra) })
         await promptWizard(chatJid, contentPrompt(extra.presetId))
         return
     }
     if (def?.type === "shopping" && extra.shoppingArgs == null && extra.shoppingBody == null) {
-        setState(ownerKey, { action: "flood_preset_pick_content", ...flowPayload(extra) })
-        await promptWizard(chatJid, shoppingContentPrompt(extra.presetId))
+        setState(ownerKey, { action: "flood_preset_pick_content", contentKind: "shopping", ...flowPayload(extra) })
+        await enviarCancelavel(chatJid, shoppingContentPrompt(extra.presetId))
         return
     }
     if (extra.qtd == null || extra.qtd === "") {
@@ -492,8 +494,27 @@ export async function handleFloodPresetState(chatJid, ownerKey, st, text) {
 
     if (st.action === "flood_preset_pick_content" && text) {
         const raw = text.trim()
+        const shoppingNow = isShoppingContentState(st)
         if (raw === "0" || raw.toLowerCase() === "manter") {
-            await continueWizard(chatJid, ownerKey, { ...flowPayload(st), paymentArgs: st.paymentArgs || false })
+            await continueWizard(chatJid, ownerKey, {
+                ...flowPayload(st),
+                paymentArgs: shoppingNow ? st.paymentArgs : (st.paymentArgs || false),
+                shoppingArgs: shoppingNow ? false : st.shoppingArgs,
+                shoppingBody: shoppingNow ? false : st.shoppingBody
+            })
+            return true
+        }
+        if (shoppingNow) {
+            const parsed = parseShoppingArgs(raw)
+            if (parsed.ok) {
+                await continueWizard(chatJid, ownerKey, { ...flowPayload(st), shoppingArgs: raw, shoppingBody: false })
+                return true
+            }
+            if (parsed.error === "SURFACE_INVALID" || parsed.error === "SHOP_ID_INVALID" || parsed.error === "SHOP_ID_MISSING") {
+                await getSock().sendMessage(chatJid, { text: `❌ ${formatShoppingError(parsed.error)}` })
+                return true
+            }
+            await continueWizard(chatJid, ownerKey, { ...flowPayload(st), shoppingArgs: false, shoppingBody: raw })
             return true
         }
         const parsed = parsePaymentArgs(raw)

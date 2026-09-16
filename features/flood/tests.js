@@ -75,6 +75,8 @@ export async function runFloodPresetTests() {
         assert(parseSurface(1).ok && parseSurface("2").ok && parseSurface(3).ok && parseSurface("4").ok, "surface 1-4 válidos")
         assert(parseShopId("").error === "SHOP_ID_MISSING", "shop.id vazio")
         assert(parseShopId("https://").error === "SHOP_ID_INVALID", "shop.id URL inválida")
+        const shBody = parseShoppingArgs("É O TERROR 🙊|by zuck|4|https://en.wikipedia.org/wiki/QR_code")
+        assert(shBody.ok && shBody.surface === 4 && shBody.title === "by zuck" && shBody.text.includes("É O TERROR"), "shopping texto com | no meio + title|surface|id")
         const sh1 = parseShoppingArgs("Produto de teste|SYZYGY SHOP|1|https://en.wikipedia.org/wiki/QR_code")
         assert(sh1.ok && sh1.surface === 1 && sh1.content.shop.id.startsWith("https://"), "shopping texto|title|surface|id")
         assert(sh1.content.text === "Produto de teste" && sh1.content.title === "SYZYGY SHOP", "shopping text+title")

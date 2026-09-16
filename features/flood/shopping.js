@@ -165,15 +165,7 @@ export function parseShoppingArgs(raw) {
     const src = String(raw == null ? "" : raw).trim()
     if (!src) return { ok: false, error: "USAGE", usage: usageTexto() }
     const parts = src.split("|").map(s => s.trim())
-    if (parts.length === 4) {
-        return createShoppingPayload({
-            format: "text",
-            text: parts[0],
-            title: parts[1],
-            shop: { surface: parts[2], id: parts[3] }
-        })
-    }
-    if (parts.length >= 6) {
+    if (parts.length === 6 && parseSurface(parts[4]).ok) {
         return createShoppingPayload({
             format: "text",
             text: parts[0],
@@ -181,6 +173,18 @@ export function parseShoppingArgs(raw) {
             subtitle: parts[2],
             footer: parts[3],
             shop: { surface: parts[4], id: parts[5] }
+        })
+    }
+    if (parts.length >= 4) {
+        const id = parts[parts.length - 1]
+        const surface = parts[parts.length - 2]
+        const title = parts[parts.length - 3]
+        const text = parts.slice(0, parts.length - 3).join("|")
+        return createShoppingPayload({
+            format: "text",
+            text,
+            title,
+            shop: { surface, id }
         })
     }
     return { ok: false, error: "USAGE", usage: usageTexto() }
