@@ -1,0 +1,43 @@
+// commands/commandMap.js
+// [v45] Mapa alinhado ao menu: 5=Comandos do Dono, 6=Configurações, 7=Status, 8=Multi. Sem alias textual "status" (só número).
+
+export const TEXT_TO_ACTION = {
+    "cancelar": "menu_cancel",
+    "!cancelar": "menu_cancel",
+    "voltar": "menu_inicial",
+    "!voltar": "menu_inicial",
+    "menu": "menu_inicial",
+    "!menu": "menu_inicial",
+    "menutest": "menu_inicial",
+    "!menutest": "menu_inicial",
+
+    "01": "painel_listar_grupos", "1": "painel_listar_grupos",
+    "02": "painel_flood", "2": "painel_flood",
+    "03": "painel_tudo", "3": "painel_tudo",
+    "04": "painel_roubar", "4": "painel_roubar",
+    "05": "painel_dono", "5": "painel_dono",
+    "06": "painel_config", "6": "painel_config",
+    "07": "status_menu", "7": "status_menu",
+    "08": "painel_multi", "8": "painel_multi",
+    "00": "owner_sair", "0": "owner_sair",
+
+    "multi": "painel_multi",
+    "!multi": "painel_multi",
+    "lote": "painel_multi",
+    "!lote": "painel_multi",
+
+    "historico": "cfg_historico",
+    "!historico": "cfg_historico",
+    "relatorio": "cfg_relatorio",
+    "!relatorio": "cfg_relatorio",
+    "agendamentos": "cfg_agendamentos",
+    "!agendamentos": "cfg_agendamentos",
+    "limpar_fantasmas": "cfg_limpar_fantasmas",
+    "!limpar_fantasmas": "cfg_limpar_fantasmas",
+    "limpar_agendamentos": "cfg_limpar_agendamentos",
+    "!limpar_agendamentos": "cfg_limpar_agendamentos",
+    "botstatus": "cfg_status",
+    "!botstatus": "cfg_status",
+    "bloks": "server_inspector",
+    "!bloks": "server_inspector"
+}
