@@ -1,5 +1,5 @@
 // features/flood/presets/mention.js
-// Hidetag: texto SEM lista de números; mentions só da allowlist.
+// Hidetag: texto SEM lista de números; mentions só as passadas (nunca todos os membros).
 
 export const TYPE = "mention"
 

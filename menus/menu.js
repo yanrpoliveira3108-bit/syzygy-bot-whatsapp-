@@ -34,7 +34,7 @@ export const COMANDOS = [
     { id: "painel_roubar", title: "Roubar Grupo", description: "Tira ADM todos, fecha e domina", categoria: "Ataque" },
     { id: "fast_flood_help", title: "Flood Rápido", description: "Ex: 2/01/Oi/20/1", categoria: "Ataque" },
     { id: "painel_flood_presets", title: "Flood Presets", description: "Load-test: text/mention/media/payment", categoria: "Ataque" },
-    { id: "flood_preset_payment_test", title: "Payment Test", description: "Preset payment-test (allowlist)", categoria: "Ataque" },
+    { id: "flood_preset_payment_test", title: "Payment Test", description: "Preset payment-test (escolhe grupos 1,3,5)", categoria: "Ataque" },
     { id: "fast_flood_preset_help", title: "Preset Rápido", description: "Ex: 2/preset/payment-test", categoria: "Ataque" },
     { id: "fast_nuke_help", title: "Nuke Rápido", description: "Ex: 3/01/2/Oi", categoria: "Ataque" },
     { id: "fast_roubar_help", title: "Roubar Rápido", description: "Ex: 4/01/2", categoria: "Ataque" },

@@ -1,15 +1,17 @@
 // features/flood/engine.js
-// preset → validação → allowlist → queue → limiter → envio → métricas
+// preset → validação → grupos escolhidos → queue → limiter → envio → métricas
 // Um job por vez. Dry-run não envia. Kill switch interrompe a fila.
+// Sem allowlist / allGroups / everyone — só JIDs que o usuário escolheu.
 
 import { getFloodRuntimeConfig, clampPresetLimits } from "./config.js"
 import { loadPreset, buildContent } from "./presets/index.js"
-import { filterAllowlist, getAllowlist, isOnAllowlist, maskJid, ALLOWLIST_EMPTY, BLOCKED_TARGET } from "./allowlist.js"
+import { maskJid, normalizeTargetJid, BLOCKED_TARGET } from "./allowlist.js"
 import { remainingCooldown, markJobEnd } from "./limiter.js"
 import { createQueue } from "./queue.js"
 import { isKillSwitchOn } from "./killswitch.js"
 import { createPaymentPayload } from "./payment.js"
 import { visibleTextHasPhones } from "./presets/mention.js"
+import { TARGETS_REQUIRED, extractTargetJids } from "./groups.js"
 import { info, warn, ok, err } from "../../utils/terminalUI.js"
 
 let runningJob = null
@@ -84,28 +86,49 @@ export async function runPresetJob(opts = {}) {
         return { ok: false, error: "COOLDOWN", remainingMs: cool, metrics, dryRun }
     }
 
-    const requested = Array.isArray(opts.targets) ? opts.targets : []
-    const filtered = filterAllowlist(preset.targetMode === "single"
-        ? (requested.length ? [requested[0]] : getAllowlist().slice(0, 1))
-        : (requested.length ? requested : getAllowlist())
-    )
-
-    if (filtered.error === ALLOWLIST_EMPTY || !getAllowlist().length) {
-        return { ok: false, error: ALLOWLIST_EMPTY, metrics, dryRun }
+    const requested = []
+    const seenReq = new Set()
+    for (const raw of extractTargetJids(opts.targets)) {
+        const jid = normalizeTargetJid(raw) || (String(raw).endsWith("@g.us") ? String(raw).trim() : null)
+        if (!jid || seenReq.has(jid)) continue
+        seenReq.add(jid)
+        requested.push(jid)
+    }
+    if (!requested.length) {
+        return { ok: false, error: TARGETS_REQUIRED, metrics, dryRun }
     }
 
-    if (filtered.blocked.length && !filtered.allowed.length) {
-        return { ok: false, error: BLOCKED_TARGET, blocked: filtered.blocked.map(b => maskJid(b.jid)), metrics, dryRun }
+    let isProtected = () => false
+    try {
+        const { isAuthorizedGroup } = await import("../../utils/permissions.js")
+        isProtected = (jid) => {
+            try { return isAuthorizedGroup(jid) } catch { return false }
+        }
+    } catch {}
+
+    const allowed = []
+    const blocked = []
+    for (const jid of requested) {
+        if (isProtected(jid)) {
+            blocked.push(jid)
+            continue
+        }
+        allowed.push(jid)
     }
 
-    let targets = filtered.allowed.slice(0, preset.maxMessages)
+    if (!allowed.length) {
+        return { ok: false, error: BLOCKED_TARGET, blocked: blocked.map(maskJid), metrics, dryRun }
+    }
+
+    let targets = allowed.slice(0, preset.maxMessages)
     if (preset.targetMode === "single") targets = targets.slice(0, 1)
     metrics.queued = targets.length
-    metrics.blocked = filtered.blocked.length
+    metrics.blocked = blocked.length
 
     if (!targets.length) {
-        return { ok: false, error: BLOCKED_TARGET, metrics, dryRun }
+        return { ok: false, error: BLOCKED_TARGET, blocked: blocked.map(maskJid), metrics, dryRun }
     }
+    const selectedSet = new Set(targets)
 
     if (preset.type === "mention") {
         const txt = String(preset.text || "")
@@ -136,7 +159,7 @@ export async function runPresetJob(opts = {}) {
     let results = []
     try {
         results = await queue.runItems(items, async (item) => {
-            if (!isOnAllowlist(item.target)) {
+            if (!selectedSet.has(item.target)) {
                 throw Object.assign(new Error(BLOCKED_TARGET), { code: BLOCKED_TARGET })
             }
             const mentions = preset.type === "mention" || preset.type === "payment"
@@ -210,7 +233,7 @@ export async function runPresetJob(opts = {}) {
         },
         dryRun,
         targets: targets.map(maskJid),
-        blocked: filtered.blocked.map(b => maskJid(b.jid)),
+        blocked: blocked.map(maskJid),
         metrics,
         results: results.map(r => ({
             ok: !!r.ok,
@@ -236,24 +259,8 @@ async function defaultSend(jid, content) {
     return safeSendMessage(jid, content, 1)
 }
 
-async function defaultMentions(targetJid) {
-    const allow = getAllowlist().filter(j => !j.endsWith("@g.us"))
-    if (!String(targetJid).endsWith("@g.us")) {
-        return allow.filter(j => j === targetJid)
-    }
-    try {
-        const { cachedGroupMetadata } = await import("../../services/groupService.js")
-        const meta = await cachedGroupMetadata(targetJid)
-        const parts = meta?.participants || []
-        const mentions = []
-        for (const p of parts) {
-            const id = p.id || p.jid
-            if (id && isOnAllowlist(id)) mentions.push(id)
-        }
-        return mentions
-    } catch {
-        return allow
-    }
+async function defaultMentions() {
+    return []
 }
 
 export function describePreset(id) {

@@ -32,7 +32,7 @@ const CONFIG_ROTULOS_DONO = [
     ["27", "- Remover grupo"], ["28", "+ Add dono extra"], ["29", "- Remover dono"],
     ["30", "ViewOnce ON/OFF"], ["31", "VO -> grupos"], ["32", "VO -> owner"],
     ["33", "VO -> ADMs"], ["34", "VO salvar"], ["35", "Voltar ao menu"],
-    ["36", "Flood presets"], ["37", "Flood dry-run"], ["38", "Flood allowlist"],
+    ["36", "Flood presets"], ["37", "Flood dry-run"], ["38", "Escolher grupos"],
     ["39", "Flood kill switch"]
 ]
 
@@ -177,7 +177,7 @@ export async function enviarSubmenuConfig(jid, ownerKey, modo = "adm") {
         t += `╭─〔 🌊 𝗙𝗟𝗢𝗢𝗗 𝗣𝗥𝗘𝗦𝗘𝗧𝗦 〕───────\n`
         t += `┃ ⬥ 36 · Flood presets (load-test)\n`
         t += `┃ ⬥ 37 · Dry-run: ${CONFIG.floodDryRun !== false ? "LIGADO" : "DESLIGADO"}\n`
-        t += `┃ ⬥ 38 · Allowlist [${(CONFIG.floodAllowlist || []).length}]\n`
+        t += `┃ ⬥ 38 · Escolher grupos (1,3,5)\n`
         t += `┃ ⬥ 39 · Kill switch: ${CONFIG.floodKillSwitch ? "ON" : "OFF"}\n`
         t += `╰───────────────────────\n`
         t += ` 35 · ⬅️ Voltar ao menu\n\n`

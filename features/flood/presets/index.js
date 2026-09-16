@@ -18,7 +18,7 @@ export function loadPreset(id, overlay = {}) {
     const base = getPresetDef(id)
     if (!base) return { ok: false, error: "PRESET_UNKNOWN" }
     const merged = clampPresetLimits({ ...base, ...overlay, id: base.id, type: overlay.type || base.type })
-    if (!["allowlist", "single"].includes(merged.targetMode)) merged.targetMode = "allowlist"
+    if (!["selected", "single"].includes(merged.targetMode)) merged.targetMode = "selected"
     return { ok: true, preset: merged }
 }
 

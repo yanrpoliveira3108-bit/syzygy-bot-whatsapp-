@@ -11,9 +11,22 @@ Comandos (parser existente):
 - Rápido: `2/preset/<nome>`
 - Payload payment: `2/preset/payment-test/Pagamento do pedido|25.90|BRL`
 - Menu do grupo: opção **5 · FLOOD PRESETS**
-- Dono: `5/36` presets · `5/37` dry-run · `5/38` allowlist · `5/39` kill
+- Dono: `5/36` presets · `5/37` dry-run · `5/38` escolher grupos · `5/39` kill
 
 O flood clássico (`2`, `2/01/Oi/20/1`, painel 2) permanece igual.
+
+## Escolha de grupos
+
+Não usa allowlist. Depois do preset, o bot **mostra os grupos** em que está e pede a escolha:
+
+```
+1
+1,3,5
+```
+
+Um ou mais números da lista, separados por vírgula. Sem escolha → não envia. Sem `allGroups` / `everyone`.
+
+Grupos autorizados (protegidos) são ignorados, como no flood clássico.
 
 ## Preset: payment-test
 
@@ -23,7 +36,7 @@ Max messages: 3
 Interval: 3000 ms
 Concurrency: 1
 Cooldown: 30 s
-Target mode: allowlist
+Target mode: selected
 ```
 
 Payload:
@@ -51,8 +64,8 @@ mapeia para `requestPaymentMessage` (`amount1000 = valor * 1000`).
 
 ## Segurança
 
-- Allowlist obrigatória (`floodAllowlist` no `config.json`)
-- Destino fora da lista → `BLOCKED_TARGET`
+- Destino = grupos escolhidos na lista (1 ou 1,3,5)
+- Sem escolha → `TARGETS_REQUIRED`
 - Dry-run padrão (`floodDryRun: true`) — não envia
 - `maxMessages` / interval / concurrency / cooldown / timeout
 - Kill switch global `FLOOD_KILL_SWITCH` (`floodstop`)
@@ -62,6 +75,6 @@ mapeia para `requestPaymentMessage` (`amount1000 = valor * 1000`).
 
 ## Engine
 
-preset → validação → allowlist → queue → limiter → envio → métricas
+preset → validação → grupos escolhidos → queue → limiter → envio → métricas
 
 Todos os presets compartilham a mesma fila, limiter, retry curto, timeout, cancelamento e métricas (`started`, `queued`, `sent`, `failed`, `cancelled`, `duration`, `averageLatency`).

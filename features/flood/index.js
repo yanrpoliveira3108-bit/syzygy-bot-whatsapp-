@@ -1,18 +1,19 @@
 // features/flood/index.js
 // API pública do flood de presets (load-test). Não substitui executarFlood.
 
-import { getSock } from "../../connection/socket.js"
+import { getSock, rt } from "../../connection/socket.js"
 import { setState, clearState } from "../../utils/stateManager.js"
 import { CONFIG, salvarConfig } from "../../utils/config.js"
 import { isOwner } from "../../utils/permissions.js"
 import { safeSendMessage } from "../../services/groupService.js"
-import { enviarVoltar, enviarCancelavel } from "../../menus/groupMenu.js"
+import { enviarVoltar, enviarCancelavel, listarGruposInterativo } from "../../menus/groupMenu.js"
 import { getFloodRuntimeConfig, listPresetIds } from "./config.js"
-import { addAllowlistJid, removeAllowlistJid, formatAllowlistTexto, maskJid, ALLOWLIST_EMPTY, BLOCKED_TARGET } from "./allowlist.js"
+import { maskJid, BLOCKED_TARGET } from "./allowlist.js"
 import { isKillSwitchOn, setKillSwitch } from "./killswitch.js"
 import { cancelRunningJob, isFloodEngineRunning, runPresetJob, describePreset } from "./engine.js"
 import { formatPaymentError, getPaymentApiInfo, parsePaymentArgs } from "./payment.js"
 import { listPresets } from "./presets/index.js"
+import { parseSelectedGroups, TARGETS_REQUIRED, extractTargetJids } from "./groups.js"
 
 export {
     runPresetJob,
@@ -23,7 +24,8 @@ export {
     getPaymentApiInfo,
     parsePaymentArgs,
     describePreset,
-    listPresets
+    listPresets,
+    parseSelectedGroups
 }
 
 const PRESET_BY_ACTION = {
@@ -34,19 +36,19 @@ const PRESET_BY_ACTION = {
 }
 
 export function formatPresetsMenu() {
-    const rt = getFloodRuntimeConfig()
+    const rtCfg = getFloodRuntimeConfig()
     const list = listPresets()
     let t = `🌊 FLOOD PRESETS (load-test)\n`
-    t += `Kill: ${rt.killSwitch ? "ON" : "OFF"} · Dry-run: ${rt.dryRun ? "ON" : "OFF"} · Test: ${rt.testMode ? "ON" : "OFF"}\n`
-    t += `Allowlist: ${rt.allowlist.length}\n`
+    t += `Kill: ${rtCfg.killSwitch ? "ON" : "OFF"} · Dry-run: ${rtCfg.dryRun ? "ON" : "OFF"} · Test: ${rtCfg.testMode ? "ON" : "OFF"}\n`
     t += `━━━━━━━━━━━━━━━━━━━━\n`
     list.forEach((p, i) => {
         t += `  ${i + 1} · ${p.id}  (${p.type} · max ${p.maxMessages} · ${p.interval}ms)\n`
     })
     t += `\n  9 · STOP (kill switch)\n`
     t += `  0 · voltar\n\n`
-    t += `_Somente destinos da allowlist._\n`
-    t += `_Dry-run não envia mensagem real._\n`
+    t += `_Depois do preset, a lista de grupos aparece._\n`
+    t += `_Escolha 1 ou mais, separados por vírgula._\n`
+    t += `_Ex: 1    ou    1,3,5_\n`
     t += `_Rápido: 2/preset/payment-test_\n`
     t += `_paymenttest · texttest · floodstop_`
     return t
@@ -70,8 +72,8 @@ export function formatPresetReport(p) {
 function formatJobResult(r) {
     if (!r) return "Falha interna."
     if (!r.ok && r.error) {
-        if (r.error === ALLOWLIST_EMPTY) return "❌ Allowlist vazia. Configure destinos (menu 5 · 38) antes de testar."
-        if (r.error === BLOCKED_TARGET) return "❌ BLOCKED_TARGET — destino fora da allowlist."
+        if (r.error === TARGETS_REQUIRED) return "❌ Nenhum grupo escolhido. Digite o número (ex: 1) ou vários separados por vírgula (ex: 1,3,5)."
+        if (r.error === BLOCKED_TARGET) return "❌ BLOCKED_TARGET — grupo protegido (autorizado) ou inválido."
         if (r.error === "KILL_SWITCH") return "❌ FLOOD_KILL_SWITCH ativo. Use floodstart para liberar."
         if (r.error === "JOB_IN_PROGRESS") return "❌ Já existe um teste em execução."
         if (r.error === "COOLDOWN") return `❌ Cooldown ativo (${Math.ceil((r.remainingMs || 0) / 1000)}s).`
@@ -103,6 +105,22 @@ async function reply(chatJid, text) {
     } catch {
         try { await safeSendMessage(chatJid, { text }, 0) } catch {}
     }
+}
+
+async function promptGroupPick(chatJid, ownerKey, extra = {}) {
+    const cache = await listarGruposInterativo(chatJid)
+    if (!cache) return
+    rt().groupSelectionCache[ownerKey] = cache
+    setState(ownerKey, {
+        action: "flood_preset_pick_groups",
+        presetId: extra.presetId,
+        paymentArgs: extra.paymentArgs,
+        dryRun: extra.dryRun
+    })
+    await enviarCancelavel(
+        chatJid,
+        `🌊 Escolha 1 ou mais grupos, separados por vírgula.\nEx: 1\nEx: 1,3,5\n\n0 = voltar · p2 = próxima página`
+    )
 }
 
 export async function floodRouter(chatJid, ownerKey, actionId, extra = {}) {
@@ -141,14 +159,8 @@ export async function floodRouter(chatJid, ownerKey, actionId, extra = {}) {
         return
     }
     if (actionId === "cfg_flood_allowlist") {
-        if (!isOwner(ownerKey)) {
-            await getSock().sendMessage(chatJid, { text: "❌ Apenas o dono edita a allowlist." })
-            return
-        }
-        setState(ownerKey, { action: "config_flood_allowlist" })
-        await enviarCancelavel(chatJid,
-            `🎯 FLOOD ALLOWLIST\n\n${formatAllowlistTexto()}\n\nEnvie o número/JID para ADICIONAR.\nDigite REMOVER <n> para remover.\n(cancelar para sair)`
-        )
+        await reply(chatJid, "Flood presets não usam allowlist.\nEscolha os grupos na lista, separados por vírgula (ex: 1 ou 1,3,5).")
+        await floodRouter(chatJid, ownerKey, "painel_flood_presets")
         return
     }
     if (actionId === "cfg_flood_testmode") {
@@ -164,12 +176,21 @@ export async function floodRouter(chatJid, ownerKey, actionId, extra = {}) {
 
     const presetId = PRESET_BY_ACTION[actionId] || extra.presetId
     if (presetId) {
+        const targets = extractTargetJids(extra.targets)
+        if (!targets.length) {
+            await promptGroupPick(chatJid, ownerKey, {
+                presetId,
+                paymentArgs: extra.paymentArgs,
+                dryRun: extra.dryRun
+            })
+            return
+        }
         const r = await runPresetJob({
             presetId,
             ownerKey,
             dryRun: extra.dryRun,
             paymentArgs: extra.paymentArgs,
-            targets: extra.targets,
+            targets,
             mediaBuffer: extra.mediaBuffer
         })
         try {
@@ -215,36 +236,69 @@ export async function handleFloodPresetState(chatJid, ownerKey, st, text) {
             }
             return true
         }
-        clearState(ownerKey)
         await floodRouter(chatJid, ownerKey, "run", { presetId: id })
         return true
     }
-    if (st.action === "config_flood_allowlist" && text) {
+    if (st.action === "flood_preset_pick_groups" && text) {
         const raw = text.trim()
-        if (/^remover\b/i.test(raw)) {
-            const arg = raw.replace(/^remover\s*/i, "")
-            const res = removeAllowlistJid(arg || "1")
-            salvarConfig()
-            if (!res.ok) await getSock().sendMessage(chatJid, { text: "Não encontrado." })
-            else await enviarVoltar(chatJid, `✅ Removido: ${maskJid(res.removed)}\n\n${formatAllowlistTexto()}`)
-            clearState(ownerKey)
+        const pagMatch = raw.match(/^(?:pag|p)\s*(\d+)$/i)
+        if (pagMatch) {
+            const novoCache = await listarGruposInterativo(chatJid, parseInt(pagMatch[1], 10))
+            if (novoCache) rt().groupSelectionCache[ownerKey] = novoCache
+            setState(ownerKey, {
+                action: "flood_preset_pick_groups",
+                presetId: st.presetId,
+                paymentArgs: st.paymentArgs,
+                dryRun: st.dryRun
+            })
+            await enviarCancelavel(
+                chatJid,
+                `🌊 Escolha 1 ou mais grupos, separados por vírgula.\nEx: 1\nEx: 1,3,5\n\n0 = voltar · p2 = próxima página`
+            )
             return true
         }
-        const parts = raw.split(/[\s,]+/).map(s => s.trim()).filter(Boolean)
-        const added = []
-        const invalid = []
-        for (const p of parts) {
-            const res = addAllowlistJid(p)
-            if (res.ok) added.push(maskJid(res.jid))
-            else invalid.push(p)
+        if (raw === "0" || raw.toLowerCase() === "voltar") {
+            await floodRouter(chatJid, ownerKey, "painel_flood_presets")
+            return true
         }
-        salvarConfig()
-        let msg = ""
-        if (added.length) msg += `✅ Allowlist: ${added.join(", ")}\n`
-        if (invalid.length) msg += `❌ Inválidos: ${invalid.join(", ")}\n`
-        msg += `\n${formatAllowlistTexto()}`
-        await enviarVoltar(chatJid, msg.trim())
+        const cache = rt().groupSelectionCache[ownerKey] || {}
+        const parsed = parseSelectedGroups(cache, raw)
+        if (!parsed.ok) {
+            if (!st.avisou) {
+                setState(ownerKey, { ...st, avisou: true })
+                await getSock().sendMessage(chatJid, { text: "⚠️ Grupo não encontrado.\nDigite o número (ex: 1) ou vários separados por vírgula (ex: 1,3,5)." })
+            }
+            return true
+        }
+        if (parsed.invalid.length) {
+            await getSock().sendMessage(chatJid, { text: `⚠️ Ignorando inválidos: ${parsed.invalid.slice(0, 10).join(", ")}` })
+        }
+        let { isAuthorizedGroup } = { isAuthorizedGroup: () => false }
+        try {
+            ;({ isAuthorizedGroup } = await import("../../utils/permissions.js"))
+        } catch {}
+        const protegidos = parsed.entries.filter(e => {
+            try { return isAuthorizedGroup(e.id) } catch { return false }
+        })
+        const atacaveis = parsed.entries.filter(e => {
+            try { return !isAuthorizedGroup(e.id) } catch { return true }
+        })
+        if (protegidos.length) {
+            await getSock().sendMessage(chatJid, { text: `🛡️ ${protegidos.length} protegido(s) ignorado(s):\n${protegidos.map(g => `• ${g.subject}`).join("\n")}` })
+        }
+        if (!atacaveis.length) {
+            await getSock().sendMessage(chatJid, { text: "❌ Todos os grupos escolhidos são protegidos (autorizados)." })
+            return true
+        }
+        const names = atacaveis.map(g => g.subject).join(", ")
         clearState(ownerKey)
+        await getSock().sendMessage(chatJid, { text: `Grupos escolhidos (${atacaveis.length}): ${names}` }).catch(() => {})
+        await floodRouter(chatJid, ownerKey, "run", {
+            presetId: st.presetId,
+            paymentArgs: st.paymentArgs,
+            dryRun: st.dryRun,
+            targets: atacaveis.map(g => g.id)
+        })
         return true
     }
     return false

@@ -4,12 +4,13 @@
 import { parseAmount, parseCurrency, parsePaymentArgs, createPaymentPayload, buildPaymentContent, formatPaymentError, getPaymentApiInfo } from "./payment.js"
 import { loadPreset, listPresets, buildContent } from "./presets/index.js"
 import { FLOOD_PRESETS } from "./config.js"
-import { normalizeTargetJid, isOnAllowlist, filterAllowlist, addAllowlistJid, removeAllowlistJid, BLOCKED_TARGET, ALLOWLIST_EMPTY } from "./allowlist.js"
+import { normalizeTargetJid } from "./allowlist.js"
 import { remainingCooldown, markJobEnd, clearCooldown, classifyError, withTimeout, createLimiter } from "./limiter.js"
 import { createQueue } from "./queue.js"
 import { isKillSwitchOn, setKillSwitch } from "./killswitch.js"
 import { runPresetJob, isFloodEngineRunning, cancelRunningJob, describePreset } from "./engine.js"
 import { visibleTextHasPhones } from "./presets/mention.js"
+import { parseSelectedGroups, TARGETS_REQUIRED } from "./groups.js"
 
 function assert(cond, msg) {
     if (!cond) throw new Error(`FAIL: ${msg}`)
@@ -68,7 +69,7 @@ export async function runFloodPresetTests() {
         assert(!loadPreset("allContacts").ok, "não existe allContacts")
         const pt = loadPreset("payment-test").preset
         assert(pt.maxMessages === 3 && pt.interval === 3000 && pt.concurrency === 1 && pt.cooldown === 30000, "payment-test limites padrão")
-        assert(pt.targetMode === "allowlist", "targetMode allowlist")
+        assert(pt.targetMode === "selected", "targetMode selected")
         const over = loadPreset("payment-test", { maxMessages: 999, concurrency: 50, interval: 10 }).preset
         assert(over.maxMessages <= 10 && over.concurrency <= 2 && over.interval >= 1000, "hard caps aplicados")
         assert(listPresets().length === 4, "4 presets prontos")
@@ -79,16 +80,21 @@ export async function runFloodPresetTests() {
         assert(!visibleTextHasPhones("olá pessoal"), "texto sem telefones")
         assert(visibleTextHasPhones("@551199999999"), "detecta leak de número")
 
-        // --- allowlist ---
-        assert(filterAllowlist(["5511999999999@s.whatsapp.net"]).error === ALLOWLIST_EMPTY, "allowlist vazia")
-        const add = addAllowlistJid("5511999999999")
-        assert(add.ok && isOnAllowlist("5511999999999@s.whatsapp.net"), "add allowlist")
-        addAllowlistJid("5511888888888")
-        const fil = filterAllowlist(["5511999999999", "5511777777777"])
-        assert(fil.allowed.length === 1 && fil.blocked.length === 1 && fil.blocked[0].reason === BLOCKED_TARGET, "BLOCKED_TARGET fora da lista")
+        // --- escolha de grupos (1 ou 1,3,5) ---
+        const cache = {
+            1: { id: "111@g.us", subject: "Alpha", isAdmin: true },
+            2: { id: "222@g.us", subject: "Beta", isAdmin: false },
+            3: { id: "333@g.us", subject: "Gama", isAdmin: true }
+        }
+        const one = parseSelectedGroups(cache, "1")
+        assert(one.ok && one.entries.length === 1 && one.entries[0].id === "111@g.us", "escolhe 1 grupo")
+        const multi = parseSelectedGroups(cache, "1,3,5")
+        assert(multi.ok && multi.entries.length === 2 && multi.invalid.includes("5"), "escolhe 1,3,5 (5 inválido)")
+        const spaced = parseSelectedGroups(cache, "1, 3")
+        assert(spaced.ok && spaced.entries.map(e => e.id).join(",") === "111@g.us,333@g.us", "vírgula com espaço")
+        assert(!parseSelectedGroups(cache, "").ok, "vazio não escolhe")
+        assert(!parseSelectedGroups(cache, "all").ok, "não existe allGroups")
         assert(normalizeTargetJid("5511999999999").endsWith("@s.whatsapp.net"), "normaliza número para JID")
-        removeAllowlistJid("5511888888888")
-        assert(!isOnAllowlist("5511888888888"), "remove allowlist")
 
         // --- limiter / timeout / retry classification ---
         assert(classifyError({ message: "rate-overlimit" }).retry === true && classifyError({ message: "rate-overlimit" }).abort === false, "rate limit espera")
@@ -124,13 +130,23 @@ export async function runFloodPresetTests() {
         assert(killed.error === "KILL_SWITCH", "engine recusa com kill switch")
         setKillSwitch(false)
 
-        // --- dry-run + allowlist + métricas ---
-        CONFIG.floodAllowlist = ["5511999999999@s.whatsapp.net", "5511888888888@s.whatsapp.net"]
+        const G1 = "111111111111111@g.us"
+        const G2 = "222222222222222@g.us"
+        const noT = await runPresetJob({
+            presetId: "text-test",
+            dryRun: true,
+            ignoreCooldown: true,
+            sendFn: async () => ({ sent: true })
+        })
+        assert(noT.error === TARGETS_REQUIRED, "sem grupos escolhidos → TARGETS_REQUIRED")
+
+        // --- dry-run + grupos escolhidos + métricas ---
         let sentCount = 0
         const dry = await runPresetJob({
             presetId: "text-test",
             dryRun: true,
             ignoreCooldown: true,
+            targets: [G1, G2],
             sendFn: async () => { sentCount++; return { sent: true } }
         })
         assert(dry.ok && dry.dryRun === true, "dry-run ok")
@@ -143,6 +159,7 @@ export async function runFloodPresetTests() {
             presetId: "payment-test",
             dryRun: true,
             ignoreCooldown: true,
+            targets: [G1, G2],
             paymentArgs: "Pagamento do pedido|25.90|BRL",
             sendFn: async () => { throw new Error("não deveria enviar") }
         })
@@ -164,6 +181,7 @@ export async function runFloodPresetTests() {
             presetId: "text-test",
             dryRun: false,
             ignoreCooldown: true,
+            targets: [G1, G2],
             sendFn: async (jid, content) => {
                 realSent++
                 assert(typeof content.text === "string", "text content")
@@ -190,6 +208,7 @@ export async function runFloodPresetTests() {
             presetId: "mention-test",
             dryRun: true,
             ignoreCooldown: true,
+            targets: [G1],
             resolveMentions: async () => ["5511999999999@s.whatsapp.net"],
             sendFn: async (_jid, content) => {
                 assert(!visibleTextHasPhones(content.text), "mention não imprime números")
@@ -210,6 +229,7 @@ export async function runFloodPresetTests() {
             presetId: "text-test",
             dryRun: false,
             ignoreCooldown: true,
+            targets: [G1],
             sendFn: async () => {
                 tries++
                 throw new Error("forbidden")
