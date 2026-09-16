@@ -79,6 +79,9 @@ export async function runPresetJob(opts = {}) {
         if (!runtime.testMode && !opts.allowShoppingOutsideTest) {
             return { ok: false, error: "SHOPPING_TEST_DISABLED", metrics, dryRun, type: "shopping" }
         }
+        if (typeof opts.shoppingBody === "string" && opts.shoppingBody.trim()) {
+            preset = clampPresetLimits({ ...preset, format: "text", text: opts.shoppingBody })
+        }
         if (typeof opts.shoppingArgs === "string" && opts.shoppingArgs.trim()) {
             const { parseShoppingArgs } = await import("./shopping.js")
             const parsed = parseShoppingArgs(opts.shoppingArgs)

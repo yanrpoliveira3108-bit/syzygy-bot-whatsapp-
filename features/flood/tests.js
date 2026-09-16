@@ -439,6 +439,23 @@ export async function runFloodPresetTests() {
         })
         assert(shopLive.ok && shopSent === 1, "envio mock shopping-test")
 
+        clearCooldown("shopping-test")
+        let bodySent = 0
+        const shopBody = await runPresetJob({
+            presetId: "shopping-test",
+            dryRun: false,
+            ignoreCooldown: true,
+            targets: [G1],
+            shoppingBody: "É O TERROR, EQP CAOS TÁ ON CUIDA 🙊|290,00|BRL",
+            sendFn: async (_jid, content) => {
+                bodySent++
+                assert(content.text.includes("EQP CAOS"), "shoppingBody vira text do shop")
+                assert(content.shop && content.shop.surface === 1, "shoppingBody mantém surface default")
+                return { ok: true }
+            }
+        })
+        assert(shopBody.ok && bodySent === 1, "envio mock shoppingBody livre")
+
         // --- retry permanente aborta ---
         clearCooldown("text-test")
         let tries = 0

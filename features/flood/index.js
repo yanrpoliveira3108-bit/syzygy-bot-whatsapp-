@@ -150,11 +150,24 @@ function formatJobResult(r) {
     return t.trim()
 }
 
+const LERMAIS_SKIP = "\u034F".repeat(64)
+
+function wizardMsg(texto) {
+    const t = String(texto || "")
+    const i = t.indexOf("\n")
+    if (i < 0 || t.includes(LERMAIS_SKIP)) return t
+    return t.slice(0, i + 1) + LERMAIS_SKIP + t.slice(i + 1)
+}
+
+async function promptWizard(chatJid, texto) {
+    await enviarCancelavel(chatJid, wizardMsg(texto))
+}
+
 async function reply(chatJid, text) {
     try {
-        await enviarVoltar(chatJid, text)
+        await enviarVoltar(chatJid, wizardMsg(text))
     } catch {
-        try { await safeSendMessage(chatJid, { text }, 0) } catch {}
+        try { await safeSendMessage(chatJid, { text: wizardMsg(text) }, 0) } catch {}
     }
 }
 
@@ -163,6 +176,7 @@ function flowPayload(extra = {}) {
         presetId: extra.presetId,
         paymentArgs: extra.paymentArgs,
         shoppingArgs: extra.shoppingArgs,
+        shoppingBody: extra.shoppingBody,
         dryRun: extra.dryRun,
         qtd: extra.qtd,
         floodModo: extra.floodModo,
@@ -184,7 +198,7 @@ function shoppingContentPrompt(presetId) {
     const title = def.title || "SYZYGY SHOP"
     const surface = def.shop?.surface ?? 1
     const shopId = def.shop?.id || "https://en.wikipedia.org/wiki/QR_code"
-    return `🛍️ CONTEÚDO DA LOJA\nAtual: ${body}|${title}|${surface}|${shopId}\n\nDigite: texto|title|surface|id\nEx: Produto de teste|SYZYGY SHOP|1|https://en.wikipedia.org/wiki/QR_code\nSurface: 1 · 2 · 3 · 4\n\n0 = manter atual`
+    return `🛍️ CONTEÚDO DA LOJA\nAtual: ${title} · surface ${surface}\n\nCole o texto da loja (uma mensagem)\nOu: texto|title|surface|id\nEx: Produto de teste|SYZYGY SHOP|1|https://en.wikipedia.org/wiki/QR_code\nSurface: 1 · 2 · 3 · 4\n\n0 = manter atual`
 }
 
 function qtdPrompt() {
@@ -196,7 +210,7 @@ async function promptGroupPick(chatJid, ownerKey, extra = {}) {
     if (!cache) return
     rt().groupSelectionCache[ownerKey] = cache
     setState(ownerKey, { action: "flood_preset_pick_groups", ...flowPayload(extra) })
-    await enviarCancelavel(
+    await promptWizard(
         chatJid,
         `🌊 Escolha 1 ou mais grupos, separados por vírgula.\nEx: 1\nEx: 1,3,5\n\n0 = voltar · p2 = próxima página`
     )
@@ -206,22 +220,22 @@ async function continueWizard(chatJid, ownerKey, extra = {}) {
     const def = getPresetDef(extra.presetId)
     if (def?.type === "payment" && (extra.paymentArgs == null || extra.paymentArgs === "")) {
         setState(ownerKey, { action: "flood_preset_pick_content", ...flowPayload(extra) })
-        await enviarCancelavel(chatJid, contentPrompt(extra.presetId))
+        await promptWizard(chatJid, contentPrompt(extra.presetId))
         return
     }
-    if (def?.type === "shopping" && (extra.shoppingArgs == null || extra.shoppingArgs === "")) {
+    if (def?.type === "shopping" && extra.shoppingArgs == null && extra.shoppingBody == null) {
         setState(ownerKey, { action: "flood_preset_pick_content", ...flowPayload(extra) })
-        await enviarCancelavel(chatJid, shoppingContentPrompt(extra.presetId))
+        await promptWizard(chatJid, shoppingContentPrompt(extra.presetId))
         return
     }
     if (extra.qtd == null || extra.qtd === "") {
         setState(ownerKey, { action: "flood_preset_pick_qtd", ...flowPayload(extra) })
-        await enviarCancelavel(chatJid, qtdPrompt())
+        await promptWizard(chatJid, qtdPrompt())
         return
     }
     if (extra.floodModo == null || extra.floodModo === "") {
         setState(ownerKey, { action: "flood_preset_pick_speed", ...flowPayload(extra) })
-        await enviarCancelavel(chatJid, formatFloodSpeedMenu())
+        await promptWizard(chatJid, formatFloodSpeedMenu())
         return
     }
     await floodRouter(chatJid, ownerKey, "run", { ...extra, skipWizard: true })
@@ -234,6 +248,7 @@ async function executeJob(chatJid, extra = {}) {
         dryRun: extra.dryRun,
         paymentArgs: extra.paymentArgs,
         shoppingArgs: extra.shoppingArgs,
+        shoppingBody: extra.shoppingBody,
         targets: extra.targets,
         mediaBuffer: extra.mediaBuffer,
         qtd: extra.qtd,
@@ -258,7 +273,7 @@ async function executeJob(chatJid, extra = {}) {
 export async function floodRouter(chatJid, ownerKey, actionId, extra = {}) {
     if (actionId === "painel_flood_presets" || actionId === "flood_presets_menu") {
         setState(ownerKey, { action: "flood_preset_menu" })
-        await enviarCancelavel(chatJid, formatPresetsMenu())
+        await promptWizard(chatJid, formatPresetsMenu())
         return
     }
     if (actionId === "flood_kill_on") {
@@ -338,6 +353,7 @@ export async function floodRouter(chatJid, ownerKey, actionId, extra = {}) {
                 presetId,
                 paymentArgs: extra.paymentArgs,
                 shoppingArgs: extra.shoppingArgs,
+                shoppingBody: extra.shoppingBody,
                 dryRun: extra.dryRun,
                 qtd: extra.qtd,
                 floodModo: extra.floodModo
@@ -349,6 +365,7 @@ export async function floodRouter(chatJid, ownerKey, actionId, extra = {}) {
                 presetId,
                 paymentArgs: extra.paymentArgs,
                 shoppingArgs: extra.shoppingArgs,
+                shoppingBody: extra.shoppingBody,
                 dryRun: extra.dryRun,
                 qtd: extra.qtd,
                 floodModo: extra.floodModo,
@@ -425,7 +442,7 @@ export async function handleFloodPresetState(chatJid, ownerKey, st, text) {
             const novoCache = await listarGruposInterativo(chatJid, parseInt(pagMatch[1], 10))
             if (novoCache) rt().groupSelectionCache[ownerKey] = novoCache
             setState(ownerKey, { action: "flood_preset_pick_groups", ...flowPayload(st) })
-            await enviarCancelavel(
+            await promptWizard(
                 chatJid,
                 `🌊 Escolha 1 ou mais grupos, separados por vírgula.\nEx: 1\nEx: 1,3,5\n\n0 = voltar · p2 = próxima página`
             )
