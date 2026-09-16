@@ -1,5 +1,5 @@
 // features/flood/presets/index.js
-import { FLOOD_PRESETS, getPresetDef, clampPresetLimits } from "../config.js"
+import { getPresetDef, clampPresetLimits, listPresetIds } from "../config.js"
 import { buildSendContent as buildText } from "./text.js"
 import { buildSendContent as buildMention } from "./mention.js"
 import { buildSendContent as buildMedia } from "./media.js"
@@ -29,5 +29,8 @@ export function buildContent(preset, ctx = {}) {
 }
 
 export function listPresets() {
-    return Object.values(FLOOD_PRESETS).map(p => clampPresetLimits(p))
+    return listPresetIds().map(id => {
+        const def = getPresetDef(id)
+        return def ? clampPresetLimits(def) : null
+    }).filter(Boolean)
 }

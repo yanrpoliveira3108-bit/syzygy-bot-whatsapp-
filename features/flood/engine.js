@@ -12,6 +12,8 @@ import { isKillSwitchOn } from "./killswitch.js"
 import { createPaymentPayload } from "./payment.js"
 import { visibleTextHasPhones } from "./presets/mention.js"
 import { TARGETS_REQUIRED, extractTargetJids } from "./groups.js"
+import { resolveFloodSpeed, applyFloodSpeed } from "./speed.js"
+import { MAX_FLOOD } from "../../utils/config.js"
 import { info, warn, ok, err } from "../../utils/terminalUI.js"
 
 let runningJob = null
@@ -72,6 +74,14 @@ export async function runPresetJob(opts = {}) {
         preset._payment = payloadCheck
     }
 
+    let speedIn = null
+    if (opts.floodCfg && opts.floodCfg.ok) speedIn = opts.floodCfg
+    else if (opts.floodModo != null && String(opts.floodModo).trim() !== "") speedIn = resolveFloodSpeed(opts.floodModo)
+    else if (preset.modo) speedIn = resolveFloodSpeed(preset.modo)
+    if (speedIn && speedIn.ok) {
+        preset = applyFloodSpeed(preset, speedIn)
+    }
+
     if (isKillSwitchOn()) {
         logSafe("FLOOD", "CANCELLED kill switch")
         return { ok: false, error: "KILL_SWITCH", metrics, dryRun, cancelled: true }
@@ -120,15 +130,15 @@ export async function runPresetJob(opts = {}) {
         return { ok: false, error: BLOCKED_TARGET, blocked: blocked.map(maskJid), metrics, dryRun }
     }
 
-    let targets = allowed.slice(0, preset.maxMessages)
+    let targets = allowed
     if (preset.targetMode === "single") targets = targets.slice(0, 1)
-    metrics.queued = targets.length
     metrics.blocked = blocked.length
 
     if (!targets.length) {
         return { ok: false, error: BLOCKED_TARGET, blocked: blocked.map(maskJid), metrics, dryRun }
     }
     const selectedSet = new Set(targets)
+    const qtd = Math.min(Math.max(1, Number(opts.qtd) || 1), MAX_FLOOD)
 
     if (preset.type === "mention") {
         const txt = String(preset.text || "")
@@ -137,7 +147,11 @@ export async function runPresetJob(opts = {}) {
         }
     }
 
-    const items = targets.map(target => ({ target, preset }))
+    const items = []
+    for (const target of targets) {
+        for (let i = 0; i < qtd; i++) items.push({ target, preset })
+    }
+    metrics.queued = items.length
     const sendFn = typeof opts.sendFn === "function" ? opts.sendFn : defaultSend
     const resolveMentions = typeof opts.resolveMentions === "function" ? opts.resolveMentions : defaultMentions
 
@@ -146,6 +160,7 @@ export async function runPresetJob(opts = {}) {
         concurrency: preset.concurrency,
         timeout: preset.timeout,
         maxRetries: runtime.maxRetries,
+        jitter: !!preset.jitter,
         onLog: (ev, data) => {
             if (ev === "retry-check" && data?.kind === "rate_limit") {
                 logSafe("FLOOD", `rate limit — espera (não contorna) attempt=${data.attempt}`)
@@ -235,6 +250,7 @@ export async function runPresetJob(opts = {}) {
             concurrency: preset.concurrency,
             cooldown: preset.cooldown,
             targetMode: preset.targetMode,
+            floodModo: preset.floodModo,
             text: preset.type === "payment" ? preset.text : undefined,
             amount: preset.amount,
             currency: preset.currency

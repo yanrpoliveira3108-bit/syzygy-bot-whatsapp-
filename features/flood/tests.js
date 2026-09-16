@@ -11,6 +11,8 @@ import { isKillSwitchOn, setKillSwitch } from "./killswitch.js"
 import { runPresetJob, isFloodEngineRunning, cancelRunningJob, describePreset } from "./engine.js"
 import { visibleTextHasPhones } from "./presets/mention.js"
 import { parseSelectedGroups, TARGETS_REQUIRED } from "./groups.js"
+import { resolveFloodSpeed, applyFloodSpeed, formatFloodSpeedMenu } from "./speed.js"
+import { slugPresetId } from "./customStore.js"
 
 function assert(cond, msg) {
     if (!cond) throw new Error(`FAIL: ${msg}`)
@@ -27,7 +29,8 @@ export async function runFloodPresetTests() {
         dry: CONFIG.floodDryRun,
         test: CONFIG.floodTestMode,
         allow: [...(CONFIG.floodAllowlist || [])],
-        retries: CONFIG.floodMaxRetries
+        retries: CONFIG.floodMaxRetries,
+        custom: Array.isArray(CONFIG.floodCustomPresets) ? JSON.parse(JSON.stringify(CONFIG.floodCustomPresets)) : []
     }
 
     try {
@@ -36,6 +39,7 @@ export async function runFloodPresetTests() {
         CONFIG.floodTestMode = true
         CONFIG.floodAllowlist = []
         CONFIG.floodMaxRetries = 1
+        CONFIG.floodCustomPresets = []
         setKillSwitch(false)
         clearCooldown()
 
@@ -75,6 +79,39 @@ export async function runFloodPresetTests() {
         assert(listPresets().length === 4, "4 presets prontos")
         assert(describePreset("payment-test").type === "payment", "describePreset")
         assert(FLOOD_PRESETS["payment-test"].type === "payment", "preset payment no mapa")
+
+        // --- velocidade clássica (FLOOD_MODOS) ---
+        const s1 = resolveFloodSpeed("1")
+        assert(s1.ok && s1.modo === "rapido" && s1.intervalo === 50 && s1.lote === 8, "modo 1 = rápido 50ms/lote8")
+        const s2 = resolveFloodSpeed("normal")
+        assert(s2.ok && s2.intervalo === 100, "modo normal 100ms")
+        const s3 = resolveFloodSpeed("3")
+        assert(s3.ok && s3.modo === "lento" && s3.intervalo === 250, "modo 3 = lento")
+        const s4 = resolveFloodSpeed("4")
+        assert(s4.ok && s4.modo === "seguro" && s4.jitter === true, "modo 4 = seguro + jitter")
+        const sc = resolveFloodSpeed("200")
+        assert(sc.ok && sc.intervalo === 200, "intervalo custom 200")
+        assert(!resolveFloodSpeed("xyz").ok, "velocidade inválida")
+        const payFast = applyFloodSpeed({ type: "payment", interval: 3000, concurrency: 2 }, s1)
+        assert(payFast.interval === 50 && payFast.concurrency === 1, "payment rápido: 50ms concurrency 1")
+        const txtFast = applyFloodSpeed({ type: "text", interval: 2000, concurrency: 1 }, s1)
+        assert(txtFast.interval === 50 && txtFast.concurrency === 8, "text rápido: lote 8")
+        assert(formatFloodSpeedMenu().includes("Rápido"), "menu de velocidade clássico")
+        assert(slugPresetId("Pix Loja!") === "pix-loja", "slug do preset custom")
+
+        CONFIG.floodCustomPresets = [{
+            id: "pix-loja",
+            type: "payment",
+            text: "Loja",
+            amount: 10,
+            currency: "BRL",
+            modo: "rapido"
+        }]
+        const customLoaded = loadPreset("pix-loja")
+        assert(customLoaded.ok && customLoaded.preset.text === "Loja" && customLoaded.preset.amount === 10, "carrega preset custom")
+        assert(listPresets().some(p => p.id === "pix-loja"), "custom aparece na lista")
+        CONFIG.floodCustomPresets = []
+        assert(listPresets().length === 4, "sem custom volta a 4")
 
         // --- mention leak ---
         assert(!visibleTextHasPhones("olá pessoal"), "texto sem telefones")
@@ -196,7 +233,56 @@ export async function runFloodPresetTests() {
             }
         })
         assert(live.ok && realSent === live.metrics.sent, "envio mock text-test")
-        assert(realSent <= 3, "maxMessages respeitado")
+        assert(realSent === 2, "1 envio por grupo escolhido")
+
+        clearCooldown("text-test")
+        const G3 = "333333333333333@g.us"
+        const G4 = "444444444444444@g.us"
+        let manySent = 0
+        const many = await runPresetJob({
+            presetId: "text-test",
+            dryRun: false,
+            ignoreCooldown: true,
+            floodModo: "20",
+            qtd: 2,
+            targets: [G1, G2, G3, G4],
+            sendFn: async () => { manySent++; return { ok: true } }
+        })
+        assert(many.ok && manySent === 8 && many.metrics.queued === 8, "4 grupos × qtd 2, sem corte de maxMessages")
+        assert(many.preset.interval === 20, "floodModo 20 aplica intervalo clássico (não 2000ms)")
+
+        clearCooldown("payment-test")
+        const payFastJob = await runPresetJob({
+            presetId: "payment-test",
+            dryRun: true,
+            ignoreCooldown: true,
+            floodModo: "1",
+            qtd: 1,
+            targets: [G1],
+            paymentArgs: "Pedido|9.99|BRL",
+            sendFn: async () => ({ ok: true })
+        })
+        assert(payFastJob.ok && payFastJob.preset.interval === 50 && payFastJob.preset.concurrency === 1, "payment + rápido 50ms conc=1")
+        assert(payFastJob.preset.amount === 9.99 && payFastJob.preset.currency === "BRL", "conteúdo texto|valor|moeda no job")
+
+        CONFIG.floodCustomPresets = [{
+            id: "pix-loja",
+            type: "payment",
+            text: "Loja",
+            amount: 10,
+            currency: "BRL",
+            modo: "rapido"
+        }]
+        clearCooldown("pix-loja")
+        const customJob = await runPresetJob({
+            presetId: "pix-loja",
+            dryRun: true,
+            ignoreCooldown: true,
+            targets: [G1],
+            sendFn: async () => ({ ok: true })
+        })
+        assert(customJob.ok && customJob.preset.interval === 50 && customJob.preset.amount === 10, "custom usa modo salvo + payload")
+        CONFIG.floodCustomPresets = []
 
         // --- cooldown ---
         markJobEnd("text-test")
@@ -265,6 +351,7 @@ export async function runFloodPresetTests() {
         CONFIG.floodTestMode = snap.test
         CONFIG.floodAllowlist = snap.allow
         CONFIG.floodMaxRetries = snap.retries
+        CONFIG.floodCustomPresets = snap.custom
         setKillSwitch(false)
         clearCooldown()
     }

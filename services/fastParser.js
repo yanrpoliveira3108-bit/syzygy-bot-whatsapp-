@@ -215,7 +215,7 @@ export async function handleFastCommand(chatJid, ownerKey, textRaw) {
             const { floodRouter } = await import("../features/flood/index.js")
             const name = String(partsRaw[2] || "").trim().toLowerCase()
             if (!name) {
-                await safeSendMessage(chatJid, { text: `❌ Flood preset: 2/preset/<nome>\nNomes: text-test, mention-test, media-test, payment-test\nEx: 2/preset/payment-test  (depois 1 ou 1,3,5)\nEx: 2/preset/payment-test/Pagamento do pedido|25.90|BRL` })
+                await safeSendMessage(chatJid, { text: `❌ Flood preset: 2/preset/<nome>\nNomes: text-test, mention-test, media-test, payment-test ou id custom\nEx: 2/preset/payment-test  (depois grupos, conteúdo, qtd, velocidade 1-4)\nEx: 2/preset/payment-test/Pagamento do pedido|25.90|BRL\nCriar/apagar: menu flood presets → c / a` })
                 return true
             }
             const rest = partsRaw.slice(3).join("/").trim()

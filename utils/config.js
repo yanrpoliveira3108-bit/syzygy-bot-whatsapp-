@@ -68,7 +68,8 @@ export const CONFIG = {
     floodTestMode: true,
     floodAllowlist: [],
     floodMaxRetries: 1,
-    floodTimeoutMs: 15000
+    floodTimeoutMs: 15000,
+    floodCustomPresets: []
 }
 
 export function carregarConfig() {
@@ -100,6 +101,7 @@ export function carregarConfig() {
             if (!Array.isArray(CONFIG.floodAllowlist)) CONFIG.floodAllowlist = []
             if (!CONFIG.floodMaxRetries) CONFIG.floodMaxRetries = 1
             if (!CONFIG.floodTimeoutMs) CONFIG.floodTimeoutMs = 15000
+            if (!Array.isArray(CONFIG.floodCustomPresets)) CONFIG.floodCustomPresets = []
         }
     } catch {}
     if (CONFIG.ownerOverride) setConfigOwner(CONFIG.ownerOverride)

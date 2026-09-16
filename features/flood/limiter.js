@@ -19,7 +19,7 @@ export function clearCooldown(presetId) {
     else lastJobEnd.clear()
 }
 
-export function createLimiter({ interval = 3000, concurrency = 1, timeout = 15000, key = "default" } = {}) {
+export function createLimiter({ interval = 3000, concurrency = 1, timeout = 15000, key = "default", jitter = false } = {}) {
     let inflight = 0
     const waiters = []
 
@@ -46,7 +46,8 @@ export function createLimiter({ interval = 3000, concurrency = 1, timeout = 1500
 
     async function waitInterval() {
         const last = lastSendAt.get(key) || 0
-        const wait = interval - (Date.now() - last)
+        let wait = interval - (Date.now() - last)
+        if (jitter && last) wait += Math.floor(Math.random() * 250) + 50
         if (wait > 0) await sleep(wait)
         lastSendAt.set(key, Date.now())
     }

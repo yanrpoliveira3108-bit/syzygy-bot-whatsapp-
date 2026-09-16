@@ -1,19 +1,21 @@
 // features/flood/index.js
-// API pública do flood de presets (load-test). Não substitui executarFlood.
+// API pública do flood de presets. Não substitui executarFlood.
 
 import { getSock, rt } from "../../connection/socket.js"
 import { setState, clearState } from "../../utils/stateManager.js"
-import { CONFIG, salvarConfig } from "../../utils/config.js"
+import { CONFIG, salvarConfig, MAX_FLOOD } from "../../utils/config.js"
 import { isOwner } from "../../utils/permissions.js"
 import { safeSendMessage } from "../../services/groupService.js"
 import { enviarVoltar, enviarCancelavel, listarGruposInterativo } from "../../menus/groupMenu.js"
-import { getFloodRuntimeConfig, listPresetIds } from "./config.js"
+import { getFloodRuntimeConfig, listPresetIds, getPresetDef } from "./config.js"
 import { maskJid, BLOCKED_TARGET } from "./allowlist.js"
 import { isKillSwitchOn, setKillSwitch } from "./killswitch.js"
 import { cancelRunningJob, isFloodEngineRunning, runPresetJob, describePreset } from "./engine.js"
 import { formatPaymentError, getPaymentApiInfo, parsePaymentArgs } from "./payment.js"
 import { listPresets } from "./presets/index.js"
 import { parseSelectedGroups, TARGETS_REQUIRED, extractTargetJids } from "./groups.js"
+import { resolveFloodSpeed, formatFloodSpeedMenu } from "./speed.js"
+import { listCustomPresets, saveCustomPreset, deleteCustomPreset, formatCustomPresetsTexto, slugPresetId } from "./customStore.js"
 
 export {
     runPresetJob,
@@ -25,7 +27,12 @@ export {
     parsePaymentArgs,
     describePreset,
     listPresets,
-    parseSelectedGroups
+    parseSelectedGroups,
+    resolveFloodSpeed,
+    formatFloodSpeedMenu,
+    saveCustomPreset,
+    deleteCustomPreset,
+    listCustomPresets
 }
 
 const PRESET_BY_ACTION = {
@@ -35,22 +42,30 @@ const PRESET_BY_ACTION = {
     flood_preset_payment_test: "payment-test"
 }
 
+const BUILTIN_IDS = ["text-test", "mention-test", "media-test", "payment-test"]
+
 export function formatPresetsMenu() {
     const rtCfg = getFloodRuntimeConfig()
     const list = listPresets()
-    let t = `🌊 FLOOD PRESETS (load-test)\n`
+    let t = `🌊 FLOOD PRESETS\n`
     t += `Kill: ${rtCfg.killSwitch ? "ON" : "OFF"} · Dry-run: ${rtCfg.dryRun ? "ON" : "OFF"} · Test: ${rtCfg.testMode ? "ON" : "OFF"}\n`
     t += `━━━━━━━━━━━━━━━━━━━━\n`
     list.forEach((p, i) => {
-        t += `  ${i + 1} · ${p.id}  (${p.type} · max ${p.maxMessages} · ${p.interval}ms)\n`
+        const n = i + 1
+        let extra = p.type
+        if (p.type === "payment") extra += ` ${Number(p.amount || 0).toFixed(2)} ${p.currency || "BRL"}`
+        if (p.modo) extra += ` · ${p.modo}`
+        t += `  ${n} · ${p.id}  (${extra})\n`
     })
-    t += `\n  9 · STOP (kill switch)\n`
+    t += `\n  c · criar preset\n`
+    t += `  a · apagar preset\n`
+    t += `  9 · STOP (kill switch)\n`
     t += `  0 · voltar\n\n`
-    t += `_Depois do preset, a lista de grupos aparece._\n`
-    t += `_Escolha 1 ou mais, separados por vírgula._\n`
-    t += `_Ex: 1    ou    1,3,5_\n`
-    t += `_Rápido: 2/preset/payment-test_\n`
-    t += `_paymenttest · texttest · floodstop_`
+    t += `_Depois do preset: grupos → conteúdo → qtd → velocidade._\n`
+    t += `_Grupos: 1 ou 1,3,5_\n`
+    t += `_Pagamento: texto|valor|moeda_\n`
+    t += `_Velocidade: 1 rápido · 2 normal · 3 lento · 4 seguro_\n`
+    t += `_Rápido: 2/preset/payment-test_`
     return t
 }
 
@@ -58,6 +73,7 @@ export function formatPresetReport(p) {
     if (!p) return "Preset inválido."
     let t = `Preset: ${p.id}\n`
     t += `Type: ${p.type}\n`
+    if (p.floodModo) t += `Modo: ${p.floodModo}\n`
     t += `Max messages: ${p.maxMessages}\n`
     t += `Interval: ${p.interval} ms\n`
     t += `Concurrency: ${p.concurrency}\n`
@@ -84,7 +100,7 @@ function formatJobResult(r) {
         if (r.error === "JOB_IN_PROGRESS") return "❌ Já existe um teste em execução."
         if (r.error === "COOLDOWN") return `❌ Cooldown ativo (${Math.ceil((r.remainingMs || 0) / 1000)}s).`
         if (r.error === "PAYMENT_TEST_DISABLED") return "❌ payment-test só roda com floodTestMode ligado."
-        if (r.error === "PRESET_UNKNOWN") return "❌ Preset desconhecido. Use text-test, mention-test, media-test, payment-test."
+        if (r.error === "PRESET_UNKNOWN") return "❌ Preset desconhecido. Use 1-4, o id do custom, ou crie com c."
         if (r.error === "MEDIA_UNAVAILABLE") return "❌ media-test: nenhuma imagem configurada (menuImage)."
         if (r.error === "ENGINE_ERROR") return `❌ Falha no envio: ${r.message || r.error}`
         if (PAYMENT_ERR.has(r.error) || r.usage) {
@@ -97,6 +113,7 @@ function formatJobResult(r) {
     const m = r.metrics || {}
     let t = r.dryRun ? "🧪 DRY-RUN (nada enviado)\n" : (r.ok ? "✅ Execução\n" : "❌ Execução com falha\n")
     t += `Preset: ${r.preset?.id} (${r.preset?.type})\n`
+    if (r.preset?.floodModo) t += `Velocidade: ${r.preset.floodModo} (${r.preset.interval}ms)\n`
     t += `Queued: ${m.queued} · Sent: ${m.sent} · Fail: ${m.failed} · Cancel: ${m.cancelled}\n`
     t += `Duration: ${m.duration}ms · Avg latency: ${m.averageLatency}ms\n`
     const firstFail = (r.results || []).find(x => x && !x.ok && (x.message || x.error))
@@ -117,20 +134,85 @@ async function reply(chatJid, text) {
     }
 }
 
+function flowPayload(extra = {}) {
+    return {
+        presetId: extra.presetId,
+        paymentArgs: extra.paymentArgs,
+        dryRun: extra.dryRun,
+        qtd: extra.qtd,
+        floodModo: extra.floodModo,
+        targets: extra.targets
+    }
+}
+
+function contentPrompt(presetId) {
+    const def = getPresetDef(presetId) || {}
+    const note = def.text || "Pagamento de teste"
+    const amount = Number.isFinite(Number(def.amount)) ? Number(def.amount).toFixed(2) : "25.90"
+    const currency = def.currency || "BRL"
+    return `💳 CONTEÚDO DO PAGAMENTO\nAtual: ${note}|${amount}|${currency}\n\nDigite: texto|valor|moeda\nEx: Pagamento do pedido|25.90|BRL\n\n0 = manter atual`
+}
+
+function qtdPrompt() {
+    return `Quantidade por grupo (máx ${MAX_FLOOD}):\n0 = 1`
+}
+
 async function promptGroupPick(chatJid, ownerKey, extra = {}) {
     const cache = await listarGruposInterativo(chatJid)
     if (!cache) return
     rt().groupSelectionCache[ownerKey] = cache
-    setState(ownerKey, {
-        action: "flood_preset_pick_groups",
-        presetId: extra.presetId,
-        paymentArgs: extra.paymentArgs,
-        dryRun: extra.dryRun
-    })
+    setState(ownerKey, { action: "flood_preset_pick_groups", ...flowPayload(extra) })
     await enviarCancelavel(
         chatJid,
         `🌊 Escolha 1 ou mais grupos, separados por vírgula.\nEx: 1\nEx: 1,3,5\n\n0 = voltar · p2 = próxima página`
     )
+}
+
+async function continueWizard(chatJid, ownerKey, extra = {}) {
+    const def = getPresetDef(extra.presetId)
+    if (def?.type === "payment" && (extra.paymentArgs == null || extra.paymentArgs === "")) {
+        setState(ownerKey, { action: "flood_preset_pick_content", ...flowPayload(extra) })
+        await enviarCancelavel(chatJid, contentPrompt(extra.presetId))
+        return
+    }
+    if (extra.qtd == null || extra.qtd === "") {
+        setState(ownerKey, { action: "flood_preset_pick_qtd", ...flowPayload(extra) })
+        await enviarCancelavel(chatJid, qtdPrompt())
+        return
+    }
+    if (extra.floodModo == null || extra.floodModo === "") {
+        setState(ownerKey, { action: "flood_preset_pick_speed", ...flowPayload(extra) })
+        await enviarCancelavel(chatJid, formatFloodSpeedMenu())
+        return
+    }
+    await floodRouter(chatJid, ownerKey, "run", { ...extra, skipWizard: true })
+}
+
+async function executeJob(chatJid, extra = {}) {
+    const r = await runPresetJob({
+        presetId: extra.presetId,
+        ownerKey: extra.ownerKey,
+        dryRun: extra.dryRun,
+        paymentArgs: extra.paymentArgs,
+        targets: extra.targets,
+        mediaBuffer: extra.mediaBuffer,
+        qtd: extra.qtd,
+        floodModo: extra.floodModo,
+        floodCfg: extra.floodCfg
+    })
+    try {
+        const { registrarAcao } = await import("../../services/historicoService.js")
+        registrarAcao("flood_preset", {
+            preset: extra.presetId,
+            dryRun: !!r.dryRun,
+            ok: !!r.ok,
+            sent: r.metrics?.sent,
+            queued: r.metrics?.queued,
+            modo: extra.floodModo || r.preset?.floodModo,
+            erro: r.error || undefined
+        })
+    } catch {}
+    await reply(chatJid, formatJobResult(r))
 }
 
 export async function floodRouter(chatJid, ownerKey, actionId, extra = {}) {
@@ -183,6 +265,30 @@ export async function floodRouter(chatJid, ownerKey, actionId, extra = {}) {
         await reply(chatJid, `🧪 floodTestMode: ${CONFIG.floodTestMode ? "LIGADO" : "DESLIGADO"}`)
         return
     }
+    if (actionId === "flood_preset_create") {
+        if (!isOwner(ownerKey)) {
+            await getSock().sendMessage(chatJid, { text: "❌ Apenas o dono cria presets." })
+            return
+        }
+        setState(ownerKey, { action: "flood_preset_create_name" })
+        await enviarCancelavel(chatJid, "Nome do preset (ex: pix-loja):\nNão use text-test / payment-test.\n\n0 = voltar")
+        return
+    }
+    if (actionId === "flood_preset_delete") {
+        if (!isOwner(ownerKey)) {
+            await getSock().sendMessage(chatJid, { text: "❌ Apenas o dono apaga presets." })
+            return
+        }
+        const custom = listCustomPresets()
+        if (!custom.length) {
+            await reply(chatJid, "Nenhum preset custom para apagar.")
+            await floodRouter(chatJid, ownerKey, "painel_flood_presets")
+            return
+        }
+        setState(ownerKey, { action: "flood_preset_delete" })
+        await enviarCancelavel(chatJid, `Apagar preset custom:\n${formatCustomPresetsTexto()}\n\nDigite o número ou o id.\n0 = voltar`)
+        return
+    }
 
     const presetId = PRESET_BY_ACTION[actionId] || extra.presetId
     if (presetId) {
@@ -191,38 +297,51 @@ export async function floodRouter(chatJid, ownerKey, actionId, extra = {}) {
             await promptGroupPick(chatJid, ownerKey, {
                 presetId,
                 paymentArgs: extra.paymentArgs,
-                dryRun: extra.dryRun
+                dryRun: extra.dryRun,
+                qtd: extra.qtd,
+                floodModo: extra.floodModo
             })
             return
         }
-        const r = await runPresetJob({
+        if (!extra.skipWizard) {
+            await continueWizard(chatJid, ownerKey, {
+                presetId,
+                paymentArgs: extra.paymentArgs,
+                dryRun: extra.dryRun,
+                qtd: extra.qtd,
+                floodModo: extra.floodModo,
+                targets
+            })
+            return
+        }
+        await executeJob(chatJid, {
+            ...extra,
             presetId,
             ownerKey,
-            dryRun: extra.dryRun,
-            paymentArgs: extra.paymentArgs,
-            targets,
-            mediaBuffer: extra.mediaBuffer
+            targets
         })
-        try {
-            const { registrarAcao } = await import("../../services/historicoService.js")
-            registrarAcao("flood_preset", {
-                preset: presetId,
-                dryRun: !!r.dryRun,
-                ok: !!r.ok,
-                sent: r.metrics?.sent,
-                queued: r.metrics?.queued,
-                erro: r.error || undefined
-            })
-        } catch {}
-        await reply(chatJid, formatJobResult(r))
         return
     }
 
     await getSock().sendMessage(chatJid, { text: `⚠️ Flood preset não reconhecido: ${actionId}` })
 }
 
+function resolveMenuPreset(raw, n) {
+    const list = listPresets()
+    if (n && /^\d+$/.test(n)) {
+        const idx = parseInt(n, 10)
+        if (idx >= 1 && idx <= list.length) return list[idx - 1]?.id || null
+    }
+    const key = String(raw || "").trim().toLowerCase()
+    if (listPresetIds().includes(key)) return key
+    const slug = slugPresetId(key)
+    if (slug && listPresetIds().includes(slug)) return slug
+    return null
+}
+
 export async function handleFloodPresetState(chatJid, ownerKey, st, text) {
     if (!st) return false
+
     if (st.action === "flood_preset_menu" && text) {
         const raw = text.trim().toLowerCase()
         const n = raw.replace(/\D/g, "")
@@ -237,30 +356,33 @@ export async function handleFloodPresetState(chatJid, ownerKey, st, text) {
             await floodRouter(chatJid, ownerKey, "flood_kill_on")
             return true
         }
-        const map = { "1": "text-test", "2": "mention-test", "3": "media-test", "4": "payment-test" }
-        const id = map[n] || (listPresetIds().includes(raw) ? raw : null)
+        if (raw === "c" || raw === "criar" || raw === "+") {
+            await floodRouter(chatJid, ownerKey, "flood_preset_create")
+            return true
+        }
+        if (raw === "a" || raw === "apagar" || raw === "-") {
+            await floodRouter(chatJid, ownerKey, "flood_preset_delete")
+            return true
+        }
+        const id = resolveMenuPreset(raw, n)
         if (!id) {
             if (!st.avisou) {
                 setState(ownerKey, { action: "flood_preset_menu", avisou: true })
-                await getSock().sendMessage(chatJid, { text: "Opção inválida. 1-4 presets · 9 stop · 0 voltar" })
+                await getSock().sendMessage(chatJid, { text: "Opção inválida. Número do preset · c criar · a apagar · 9 stop · 0 voltar" })
             }
             return true
         }
         await floodRouter(chatJid, ownerKey, "run", { presetId: id })
         return true
     }
+
     if (st.action === "flood_preset_pick_groups" && text) {
         const raw = text.trim()
         const pagMatch = raw.match(/^(?:pag|p)\s*(\d+)$/i)
         if (pagMatch) {
             const novoCache = await listarGruposInterativo(chatJid, parseInt(pagMatch[1], 10))
             if (novoCache) rt().groupSelectionCache[ownerKey] = novoCache
-            setState(ownerKey, {
-                action: "flood_preset_pick_groups",
-                presetId: st.presetId,
-                paymentArgs: st.paymentArgs,
-                dryRun: st.dryRun
-            })
+            setState(ownerKey, { action: "flood_preset_pick_groups", ...flowPayload(st) })
             await enviarCancelavel(
                 chatJid,
                 `🌊 Escolha 1 ou mais grupos, separados por vírgula.\nEx: 1\nEx: 1,3,5\n\n0 = voltar · p2 = próxima página`
@@ -301,16 +423,173 @@ export async function handleFloodPresetState(chatJid, ownerKey, st, text) {
             return true
         }
         const names = atacaveis.map(g => g.subject).join(", ")
-        clearState(ownerKey)
         await getSock().sendMessage(chatJid, { text: `Grupos escolhidos (${atacaveis.length}): ${names}` }).catch(() => {})
-        await floodRouter(chatJid, ownerKey, "run", {
-            presetId: st.presetId,
-            paymentArgs: st.paymentArgs,
-            dryRun: st.dryRun,
+        await continueWizard(chatJid, ownerKey, {
+            ...flowPayload(st),
             targets: atacaveis.map(g => g.id)
         })
         return true
     }
+
+    if (st.action === "flood_preset_pick_content" && text) {
+        const raw = text.trim()
+        if (raw === "0" || raw.toLowerCase() === "manter") {
+            await continueWizard(chatJid, ownerKey, { ...flowPayload(st), paymentArgs: st.paymentArgs || false })
+            return true
+        }
+        const parsed = parsePaymentArgs(raw)
+        if (!parsed.ok) {
+            await getSock().sendMessage(chatJid, { text: `❌ ${formatPaymentError(parsed.error)}` })
+            return true
+        }
+        await continueWizard(chatJid, ownerKey, { ...flowPayload(st), paymentArgs: raw })
+        return true
+    }
+
+    if (st.action === "flood_preset_pick_qtd" && text) {
+        const raw = text.trim()
+        if (raw === "0" || raw.toLowerCase() === "pular") {
+            await continueWizard(chatJid, ownerKey, { ...flowPayload(st), qtd: 1 })
+            return true
+        }
+        const q = parseInt(raw.replace(/\D/g, ""), 10)
+        if (!Number.isFinite(q) || q < 1) {
+            await getSock().sendMessage(chatJid, { text: `Quantidade inválida. 1-${MAX_FLOOD} ou 0 para 1.` })
+            return true
+        }
+        await continueWizard(chatJid, ownerKey, { ...flowPayload(st), qtd: Math.min(q, MAX_FLOOD) })
+        return true
+    }
+
+    if (st.action === "flood_preset_pick_speed" && text) {
+        const raw = text.trim()
+        const speed = resolveFloodSpeed(raw)
+        if (!speed.ok) {
+            if (!st.avisou) {
+                setState(ownerKey, { ...st, avisou: true })
+                await getSock().sendMessage(chatJid, { text: "Modo inválido. Digite 1-4, rapido/normal/lento/seguro, intervalo (ex: 200) ou 0." })
+            }
+            return true
+        }
+        await continueWizard(chatJid, ownerKey, { ...flowPayload(st), floodModo: raw, floodCfg: speed })
+        return true
+    }
+
+    if (st.action === "flood_preset_create_name" && text) {
+        const raw = text.trim()
+        if (raw === "0" || raw.toLowerCase() === "voltar") {
+            await floodRouter(chatJid, ownerKey, "painel_flood_presets")
+            return true
+        }
+        const id = slugPresetId(raw)
+        if (!id) {
+            await getSock().sendMessage(chatJid, { text: "Nome inválido. Use letras, números e hífen." })
+            return true
+        }
+        if (BUILTIN_IDS.includes(id)) {
+            await getSock().sendMessage(chatJid, { text: "Esse id é reservado. Escolha outro nome." })
+            return true
+        }
+        setState(ownerKey, { action: "flood_preset_create_type", createName: raw })
+        await enviarCancelavel(chatJid, `Tipo do preset "${id}":\n  1 · payment (padrão)\n  2 · text\n\n0 = voltar`)
+        return true
+    }
+
+    if (st.action === "flood_preset_create_type" && text) {
+        const raw = text.trim().toLowerCase()
+        if (raw === "0" || raw === "voltar") {
+            await floodRouter(chatJid, ownerKey, "flood_preset_create")
+            return true
+        }
+        let type = "payment"
+        if (raw === "2" || raw === "text" || raw === "texto") type = "text"
+        else if (raw === "1" || raw === "payment" || raw === "pagamento" || raw === "") type = "payment"
+        else if (!["1", "2", "payment", "text", "texto", "pagamento"].includes(raw)) {
+            await getSock().sendMessage(chatJid, { text: "Digite 1 (payment) ou 2 (text)." })
+            return true
+        }
+        setState(ownerKey, { action: "flood_preset_create_content", createName: st.createName, createType: type })
+        if (type === "payment") {
+            await enviarCancelavel(chatJid, `Conteúdo do pagamento:\ntexto|valor|moeda\nEx: Pagamento do pedido|25.90|BRL`)
+        } else {
+            await enviarCancelavel(chatJid, "Texto do preset:")
+        }
+        return true
+    }
+
+    if (st.action === "flood_preset_create_content" && text) {
+        const raw = text.trim()
+        if (raw === "0" || raw.toLowerCase() === "voltar") {
+            setState(ownerKey, { action: "flood_preset_create_type", createName: st.createName })
+            await enviarCancelavel(chatJid, `Tipo do preset:\n  1 · payment\n  2 · text\n\n0 = voltar`)
+            return true
+        }
+        const type = st.createType || "payment"
+        const draft = { createName: st.createName, createType: type }
+        if (type === "payment") {
+            const parsed = parsePaymentArgs(raw)
+            if (!parsed.ok) {
+                await getSock().sendMessage(chatJid, { text: `❌ ${formatPaymentError(parsed.error)}` })
+                return true
+            }
+            draft.createText = parsed.text
+            draft.createAmount = parsed.amount
+            draft.createCurrency = parsed.currency
+        } else {
+            if (!raw) {
+                await getSock().sendMessage(chatJid, { text: "Texto obrigatório." })
+                return true
+            }
+            draft.createText = raw
+        }
+        setState(ownerKey, { action: "flood_preset_create_speed", ...draft })
+        await enviarCancelavel(chatJid, `Velocidade padrão deste preset:\n\n${formatFloodSpeedMenu()}`)
+        return true
+    }
+
+    if (st.action === "flood_preset_create_speed" && text) {
+        const raw = text.trim()
+        const speed = resolveFloodSpeed(raw)
+        if (!speed.ok) {
+            await getSock().sendMessage(chatJid, { text: "Modo inválido. 1-4, nome do modo, intervalo (ex: 200) ou 0." })
+            return true
+        }
+        const saved = saveCustomPreset({
+            name: st.createName,
+            type: st.createType || "payment",
+            text: st.createText,
+            amount: st.createAmount,
+            currency: st.createCurrency,
+            modo: speed.modo === "custom" ? String(speed.intervalo) : speed.modo
+        })
+        if (!saved.ok) {
+            await getSock().sendMessage(chatJid, { text: `❌ Não salvou: ${saved.error}` })
+            return true
+        }
+        clearState(ownerKey)
+        const p = saved.preset
+        const extra = p.type === "payment" ? ` ${Number(p.amount).toFixed(2)} ${p.currency}` : ""
+        await floodRouter(chatJid, ownerKey, "painel_flood_presets")
+        await getSock().sendMessage(chatJid, { text: `✅ Preset ${saved.updated ? "atualizado" : "criado"}: ${p.id} (${p.type}${extra} · ${p.modo})` }).catch(() => {})
+        return true
+    }
+
+    if (st.action === "flood_preset_delete" && text) {
+        const raw = text.trim()
+        if (raw === "0" || raw.toLowerCase() === "voltar") {
+            await floodRouter(chatJid, ownerKey, "painel_flood_presets")
+            return true
+        }
+        const res = deleteCustomPreset(raw)
+        if (!res.ok) {
+            await getSock().sendMessage(chatJid, { text: "Preset não encontrado. Número da lista ou id." })
+            return true
+        }
+        await floodRouter(chatJid, ownerKey, "painel_flood_presets")
+        await getSock().sendMessage(chatJid, { text: `🗑️ Apagado: ${res.removed.id}` }).catch(() => {})
+        return true
+    }
+
     return false
 }
 

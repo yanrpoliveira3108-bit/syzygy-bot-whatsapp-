@@ -3,6 +3,7 @@
 // Overlay vem de CONFIG (utils/config.js) — não duplicar listas em vários arquivos.
 
 import { CONFIG } from "../../utils/config.js"
+import { getCustomPreset, listCustomPresets } from "./customStore.js"
 
 export const FLOOD_PRESET_HARD_CAP = {
     maxMessages: 10,
@@ -77,11 +78,34 @@ export function getFloodRuntimeConfig() {
 export function getPresetDef(id) {
     if (!id) return null
     const key = String(id).trim().toLowerCase()
-    return FLOOD_PRESETS[key] || null
+    if (FLOOD_PRESETS[key]) return { ...FLOOD_PRESETS[key] }
+    const custom = getCustomPreset(key)
+    if (custom) {
+        return {
+            id: custom.id,
+            type: custom.type || "payment",
+            text: custom.text,
+            amount: custom.amount,
+            currency: custom.currency,
+            caption: custom.caption,
+            targetMode: "selected",
+            maxMessages: 10,
+            interval: 3000,
+            concurrency: 1,
+            cooldown: 5000,
+            timeout: 15000,
+            modo: custom.modo
+        }
+    }
+    return null
 }
 
 export function listPresetIds() {
-    return Object.keys(FLOOD_PRESETS)
+    const ids = Object.keys(FLOOD_PRESETS)
+    for (const p of listCustomPresets()) {
+        if (p?.id && !ids.includes(p.id)) ids.push(p.id)
+    }
+    return ids
 }
 
 export function clampPresetLimits(preset) {

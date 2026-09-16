@@ -4,8 +4,8 @@
 import { createLimiter, classifyError, sleep } from "./limiter.js"
 import { isKillSwitchOn } from "./killswitch.js"
 
-export function createQueue({ interval, concurrency, timeout, maxRetries, onLog } = {}) {
-    const limiter = createLimiter({ interval, concurrency, timeout, key: `q-${Date.now()}` })
+export function createQueue({ interval, concurrency, timeout, maxRetries, onLog, jitter } = {}) {
+    const limiter = createLimiter({ interval, concurrency, timeout, key: `q-${Date.now()}`, jitter: !!jitter })
     let cancelled = false
     let cancelReason = null
 
