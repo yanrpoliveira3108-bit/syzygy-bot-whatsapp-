@@ -274,7 +274,7 @@ export function getFloodConfig(modoOuIntervalo) {
 }
 
 // [v29] Flood ultra rápido
-export async function executarFlood(jid, msg, qtd, intervaloOuOpts = 100) {
+export async function executarFlood(jid, msg, qtd, intervaloOuOpts = 100, buildContent = null) {
     if (isProtectedGroup(jid)) throw new Error("Grupo protegido (autorizado) — FLOOD bloqueado")
     const sock = getSock()
     qtd = Math.min(Math.max(1, qtd), MAX_FLOOD)
@@ -300,7 +300,18 @@ export async function executarFlood(jid, msg, qtd, intervaloOuOpts = 100) {
         for (let k = 0; k < n; k++) {
             const idx = i + k
             const corpo = msg + invis.repeat((idx % 6) + 1)
-            const opts = { text: corpo }
+            // CONTEÚDO por iteração. Sem builder, o comportamento é EXATAMENTE o
+            // flood clássico ({ text }). Um TIPO de conteúdo (ex.: shopping) entra
+            // pelo buildContent — mesmo laço, mesma fila, mesmo throttle, mesmas
+            // permissões. Não existe executor de loja separado.
+            let opts
+            if (typeof buildContent === "function") {
+                let custom = null
+                try { custom = buildContent({ index: idx, body: corpo, msg }) } catch { custom = null }
+                opts = custom && typeof custom === "object" ? custom : { text: corpo }
+            } else {
+                opts = { text: corpo }
+            }
             if (mentions.length && k === 0) opts.mentions = mentions
             envios.push(
                 safeSendMessage(jid, opts, 0).then(() => { ok++ }).catch(() => { erros++ })
@@ -317,6 +328,8 @@ export async function executarFlood(jid, msg, qtd, intervaloOuOpts = 100) {
 }
 
 export async function executarFloodLote(grupos, msg, qtd, opts = {}) {
+    // opts.buildContent (opcional) é repassado ao MESMO laço de executarFlood —
+    // lote e loja compartilham exatamente o mesmo executor.
     const resultados = []
     const cfg = getFloodConfig(opts)
     const delayEntreGrupos = cfg.modo === "seguro" ? 600 : cfg.modo === "lento" ? 300 : cfg.modo === "rapido" ? 150 : 200
@@ -327,7 +340,7 @@ export async function executarFloodLote(grupos, msg, qtd, opts = {}) {
             continue
         }
         try {
-            const r = await executarFlood(g.id, msg, qtd, cfg)
+            const r = await executarFlood(g.id, msg, qtd, cfg, typeof opts?.buildContent === "function" ? opts.buildContent : null)
             resultados.push({ id: g.id, subject: g.subject || g.id, ok: true, ...r })
         } catch (e) {
             resultados.push({ id: g.id, subject: g.subject || g.id, ok: false, erro: e.message })
