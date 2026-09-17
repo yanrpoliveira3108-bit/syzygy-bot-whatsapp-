@@ -667,7 +667,7 @@ completos estão no apêndice; aqui vai a obrigação funcional:
 
 - \`MAX_FLOOD = ${MAX_FLOOD}\`; teto por tipo (\`FLOOD_PRESET_HARD_CAP\`); preset
   acima do teto é **cercado**, não recusado em silêncio.
-- Kill switch: estado em memória + \`config.json\` (\`persist:true\) é que chama
+- Kill switch: estado em memória + \`config.json\` (\`persist: true\`) é que chama
   \`salvarConfig()\`); checado **por lote** — parar leva no máximo 1 lote.
 - \`dryRun\` não envia e **não** escreve histórico; \`testMode\` gate de
   payment/shopping.
