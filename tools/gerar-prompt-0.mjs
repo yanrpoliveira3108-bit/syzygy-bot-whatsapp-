@@ -511,7 +511,8 @@ Versionamento interno do fork: WhatsApp \`[2, 3000, 1026924051]\`
 (não alinhe com o \`pino ^10\` do projeto — cada um usa o seu), peer \`jimp ^0.22\`
 (ignorado; o resize é nosso), \`engines.node >= 20\`.
 
-Smoke test da fase 0 (tem que imprimir \`function\` e \`252\`):
+Smoke test da fase 0 — tem que imprimir \`function\` (e ~252 chaves no segundo
+comando; o número de exports não é contrato, é só prova de vida do pacote):
 
 \`\`\`bash
 node --input-type=module -e 'import("${SPECIFIER}").then(m=>console.log(typeof m.makeWASocket, Object.keys(m).length))'
