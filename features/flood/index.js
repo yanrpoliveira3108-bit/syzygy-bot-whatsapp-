@@ -353,6 +353,18 @@ export {
 } from "./payment.js"
 
 
+// [RESTAURAÇÃO 01a0aaae] Fachada de comandos (floodpresets/paymenttest/shoppingtest/
+// floodstop/floodstart/flooddryrun + 2/preset/<id>). Vive em ./router.js para não criar
+// ciclo: o router NUNCA importa este barrel, importa os módulos folha.
+export {
+    floodRouter,
+    floodPresetsMenuTexto,
+    FLOOD_PRESET_COMMANDS,
+    FLOOD_TEST_ACTION_PRESET,
+    paymentOverlayFromRest,
+    shoppingOverlayFromRest
+} from "./router.js"
+
 // [SHOPPING] Diagnóstico de shop.id via APIs reais do fork (getCatalog/getCollections).
 export { listarIdsDeLoja, compararShopId, extrairIds, formatDiagnostico } from "./commerce.js"
 

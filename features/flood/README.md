@@ -448,3 +448,41 @@ Custom presets: `saveCustomPreset({ name, type, … }, { persist })` grava em
 `resolveMediaBuffer` ganhou `preset.menuFallback: false` — antes, mídia ausente caía
 silenciosamente na foto de menu do bot; agora isso só acontece se o preset não disser o
 contrário, e o erro `MEDIA_UNAVAILABLE` é testável.
+
+
+## Atalhos de texto (restaurados da arena 01a0aaae)
+
+A migração para esta branch trouxe a infra, mas **não** trouxe a fachada de comandos
+que existia lá — por isso os atalhos pareciam "mortos". Eles voltaram com os **mesmos
+nomes**, implementados sobre a API desta branch em `router.js`:
+
+| Você digita | Ação | O que faz |
+|---|---|---|
+| `floodpresets` / `floodpreset` | `painel_flood_presets` | painel de presets + atalhos + estado do dry-run |
+| `texttest` | `flood_preset_text_test` | roda o preset `text-test` |
+| `mentiontest` | `flood_preset_mention_test` | roda `mention-test` |
+| `mediatest` | `flood_preset_media_test` | roda `media-test` |
+| `paymenttest` | `flood_preset_payment_test` | roda `payment-test` (`requestPaymentMessage`) |
+| `shoppingtest` | `flood_preset_shopping_test` | roda `shopping-test` (card da loja) |
+| `floodstop` | `flood_kill_on` | kill switch ON + cancela o job em andamento |
+| `floodstart` | `flood_kill_off` | kill switch OFF (respeita cooldown) |
+| `flooddryrun` | `cfg_flood_dryrun` | alterna dry-run |
+| `2/preset/<id>[/conteúdo]` | `floodRouter("run")` | preset arbitrário (built-in ou custom) |
+
+Diferenças **deliberadas** em relação à arena antiga:
+
+- os alvos vêm da **allowlist** (`38 · Escolher grupos (1,3,5)` no painel do dono) —
+  sem destino o atalho responde `ALLOWLIST_EMPTY` e não inicia job;
+- `dryRun` segue o `config.json` (padrão **ligado**): nada sai de verdade até você
+  desligar o `37`;
+- não existe wizard paralelo de preset: o envio é o `executarFlood` de
+  `services/groupService.js` (o `runPresetJob` só orquestra);
+- `payment`/`shopping` exigem `floodTestMode` ligado (`44`), senão o motor responde
+  `PAYMENT_TEST_DISABLED` / `SHOPPING_TEST_DISABLED`.
+
+Overlay aceito nos atalhos/`2/preset/…` (mesmas regras do wizard `loja:`):
+`texto|title|surface|id`, com `surface` em `1/fb · 2/ig · 3/wa` (o `4` do README do
+fork é normalizado para `3`), e texto livre preservando `|`.
+
+Validação: `node features/flood/tests-menu.js` (82 asserts — paridade menu×mapa,
+atalhos no `TEXT_TO_ACTION`, atalho rodando o motor em dry-run, overlays).

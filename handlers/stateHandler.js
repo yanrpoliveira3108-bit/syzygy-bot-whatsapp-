@@ -133,7 +133,7 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         }
         if (!st.avisouConfig) {
             setState(ownerKey, { action: "config_menu", avisouConfig: true })
-            await sock.sendMessage(chatJid, { text: "⚠️ Opção inválida. Digite 1-11 (config), 12-46 (dono — 36-45 são os controles do flood) ou 0 = voltar (cancelar = sair)." })
+            await sock.sendMessage(chatJid, { text: "⚠️ Opção inválida. Digite 1-11 (config), 12-47 (dono — 36-46 são flood presets/dry-run/grupos/allowlist) ou 0 = voltar (cancelar = sair)." })
         }
         return true
     }
@@ -1162,6 +1162,45 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
             "_se o wire não mostrar o ramo da loja, o card NÃO existe no payload — é assim que se flagra o bug antes de culpar o cliente._",
             `Para mandar de verdade: menu → ⚔️ Ataque & Grupos → 🌊 FLOOD → grupo → qtd → modo → conteúdo: loja:${raw || "0"} (e dry-run DESLIGADO em 37)`
         ].join("\n") + avisos)
+        clearState(ownerKey); return true
+    }
+
+    // 🛡️ 38 · "Escolher grupos (1,3,5)" — mesmo gesto da arena 01a0aaae, mas aqui
+    // o resultado É a allowlist (a porta de saída do flood na AB7). Substitui a
+    // lista, nunca amplia sozinha, e "limpar" fecha a porta.
+    if (st.action === "config_set_flood_allowlist_pick" && text) {
+        const fx = await import("../features/flood/index.js")
+        const raw = text.trim().toLowerCase()
+        const grupos = CONFIG.gruposAutorizados || []
+        let alvos = null
+        if (raw === "todos" || raw === "all" || raw === "*") alvos = [...grupos]
+        else if (raw === "limpar" || raw === "reset" || raw === "-") alvos = []
+        else {
+            const nums = raw.split(/[,\s]+/).map(x => x.trim()).filter(Boolean)
+            if (nums.length && nums.every(x => /^\d+$/.test(x))) {
+                alvos = []
+                const ruins = []
+                for (const n of nums) {
+                    const i = Number(n) - 1
+                    if (i < 0 || i >= grupos.length) { ruins.push(n); continue }
+                    if (!alvos.includes(grupos[i])) alvos.push(String(grupos[i]))
+                }
+                if (ruins.length) {
+                    await sock.sendMessage(chatJid, { text: `⚠️ número(s) fora da lista: ${ruins.join(", ")} (há ${grupos.length} grupos autorizados). Nada foi alterado.` })
+                    return true
+                }
+            }
+        }
+        if (!alvos) {
+            await sock.sendMessage(chatJid, { text: `⚠️ Não entendi. Use: 1 · 1,3,5 · todos · limpar\n\n${grupos.slice(0, 30).map((g, i) => `  ${i + 1} · ${fx.maskJid(g)}`).join("\n") || "_nenhum grupo autorizado_"}` })
+            return true
+        }
+        CONFIG.floodAllowlist = []
+        const erros = []
+        for (const g of alvos) { const r = fx.addAllowlistJid(g); if (!r.ok) erros.push(`${g}: ${r.error}`) }
+        salvarConfig()
+        const rod = alvos.length ? `\n\n⚔️ Para rodar: 36 (presets) ou os atalhos paymenttest/shoppingtest/texttest — e 37 decide se sai de verdade.` : ""
+        await enviarVoltar(chatJid, `🛡️ Allowlist do flood: ${alvos.length} destino(s)${erros.length ? `\n⚠️ rejeitados: ${erros.join("; ")}` : ""}\n\n${fx.formatAllowlistTexto()}${rod}`)
         clearState(ownerKey); return true
     }
 

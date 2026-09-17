@@ -75,29 +75,38 @@ async function main() {
         ok("toda ação do mapa tem rótulo no painel")
 
         // ── 2) a faixa do dono cresceu para 12-46 e o voltar continua em 35 ─────
-        assertEq(CONFIG_OPCOES["36"], "cfg_flood_kill", "36 → cfg_flood_kill")
-        assertEq(CONFIG_OPCOES["45"], "cfg_flood_xray", "45 → cfg_flood_xray")
-        assertEq(CONFIG_OPCOES["46"], "abrir_painel", "46 → voltar")
+        // 36-39 são os números/nomes ORIGINAIS da arena 01a0aaae (o que você tinha
+        // e perdeu); 40-46 são os controles novos da AB7.
+        assertEq(CONFIG_OPCOES["36"], "painel_flood_presets", "36 → painel_flood_presets (como era)")
+        assertEq(CONFIG_OPCOES["37"], "cfg_flood_dryrun", "37 → cfg_flood_dryrun (como era)")
+        assertEq(CONFIG_OPCOES["38"], "cfg_flood_allowlist", "38 → escolher grupos (como era)")
+        assertEq(CONFIG_OPCOES["39"], "cfg_flood_kill", "39 → kill switch")
+        assertEq(CONFIG_OPCOES["46"], "cfg_flood_xray", "46 → raio-x")
+        assertEq(CONFIG_OPCOES["47"], "abrir_painel", "47 → voltar")
         assertEq(CONFIG_OPCOES["35"], "abrir_painel", "35 continua sendo voltar (não quebra quem decorou)")
+        assert(CONFIG_OPCOES["40"] === "cfg_flood_allowlist_view" && CONFIG_OPCOES["41"] === "cfg_flood_allowlist_add", "40/41 = allowlist ver/add")
         const novos = ["cfg_flood_kill", "cfg_flood_dryrun", "cfg_flood_testmode", "cfg_flood_allowlist",
-            "cfg_flood_allowlist_add", "cfg_flood_allowlist_remove", "cfg_flood_speed", "cfg_flood_presets",
-            "cfg_flood_loja", "cfg_flood_xray"]
+            "cfg_flood_allowlist_view", "cfg_flood_allowlist_add", "cfg_flood_allowlist_remove",
+            "cfg_flood_speed", "cfg_flood_presets", "cfg_flood_loja", "cfg_flood_xray",
+            "painel_flood_presets", "flood_kill_on", "flood_kill_off", "flood_preset_payment_test", "flood_preset_shopping_test"]
         assert(novos.every(a => OWNER_ONLY.has(a)), "as 10 ações novas são OWNER_ONLY (ADM não alcança)")
-        assertEq(numeroNavegacao("cfg_flood_kill"), "5>36", "comando rápido 5>36 derivado do mapa")
-        assertEq(numeroNavegacao("cfg_flood_loja"), "5>44", "comando rápido 5>44 derivado do mapa")
+        assertEq(numeroNavegacao("cfg_flood_kill"), "5>39", "comando rápido 5>39 derivado do mapa")
+        assertEq(numeroNavegacao("cfg_flood_loja"), "5>45", "comando rápido 5>45 derivado do mapa")
 
         // ── 3) o TXT do painel renderiza a seção nova ────────────────────────────
         CONFIG.uiMode = "text"
         enviados.length = 0
         await enviarSubmenuConfig(DONO_FAKE, "menu-teste", "dono")
         const t = (enviados[0]?.content?.text || "")
-        assert(t.includes("⬥ 36 ·"), "painel mostra 36 (kill switch)")
-        assert(t.includes("⬥ 39 · 🛡️ Allowlist"), "painel mostra allowlist com contagem")
-        assert(t.includes("⬥ 44 · 🛍️ Loja: preview do card"), "painel mostra preview da loja")
-        assert(t.includes("⬥ 45 ·"), "painel mostra raio-x")
-        assert(t.includes(" 46 · ⬅️ Voltar ao menu"), "voltar renumerado para 46")
-        assert(t.includes("(12-46)"), "rodapé com a faixa nova")
+        assert(t.includes("⬥ 36 · Flood presets"), "painel mostra 36 (Flood presets, como era)")
+        assert(t.includes("⬥ 38 · 🎯 Escolher grupos"), "painel mostra 38 (Escolher grupos, como era)")
+        assert(t.includes("⬥ 40 · 🛡️ Allowlist de destino ["), "painel mostra allowlist com contagem")
+        assert(t.includes("⬥ 45 · 🛍️ Loja: preview do card"), "painel mostra preview da loja")
+        assert(t.includes("⬥ 46 · 🩺 Raio-X"), "painel mostra raio-x")
+        assert(t.includes(" 47 · ⬅️ Voltar ao menu"), "voltar renumerado para 47")
+        assert(t.includes("(12-47)"), "rodapé com a faixa nova")
         assert(t.includes("🧪 Dry-run"), "estado do dry-run aparece no menu")
+        assert(t.includes("shoppingtest"), "rodapé lista os atalhos de texto restaurados")
         clearState("menu-teste")
 
         // ── 4) kill switch ligado aparece no menu (sem persistir) ────────────────
@@ -157,7 +166,53 @@ async function main() {
         assert(enviados.every(e => !e.content?.text?.includes?.("FLOOD EM")) , "nenhum disparo de flood foi iniciado pelos controles")
         assert(getState("roteador-teste") == null || true, "estado do menu não vaza")
 
-        // ── 11) config.json intocado ─────────────────────────────────────────────
+        // ── 11) [RESTAURAÇÃO] atalhos de texto e fachada features/flood/router.js ─
+        const router = await import("./router.js")
+        const { FLOOD_PRESET_COMMANDS, FLOOD_TEST_ACTION_PRESET, floodRouter, paymentOverlayFromRest, shoppingOverlayFromRest } = router
+        const { TEXT_TO_ACTION: mapFonte } = await import("../../commands/commandMap.js")
+        assert(Object.keys(FLOOD_PRESET_COMMANDS).length >= 10, "10+ atalhos de flood declarados na fachada")
+        for (const [cmd, acao] of Object.entries(FLOOD_PRESET_COMMANDS)) {
+            assert(mapFonte[cmd] === acao, `TEXT_TO_ACTION tem "${cmd}" → ${acao}`)
+        }
+        for (const [acao, pid] of Object.entries(FLOOD_TEST_ACTION_PRESET)) {
+            const ld = fx.loadPreset(pid, {})
+            assert(ld.ok === true, `${acao} roda o preset real "${pid}" (loadPreset ok)`)
+            assert(OWNER_ONLY.has(acao), `${acao} é OWNER_ONLY`)
+        }
+        // sem allowlist, o job NÃO pode nem começar (nada é enviado, nada é mutado)
+        CONFIG.floodAllowlist = []
+        setState("router-teste", { action: "config_menu" })
+        enviados.length = 0
+        await floodRouter(DONO_FAKE, "router-teste", "flood_preset_payment_test")
+        const tR = enviados.map(e => e.content?.text || "").join("\n")
+        assert(enviados.every(e => e.jid === DONO_FAKE) && enviados.length === 1, "atalho sem allowlist responde só ao dono, 1 mensagem")
+        assert(/ALLOWLIST_EMPTY/.test(tR), "sem destino: ALLOWLIST_EMPTY explicado, zero job")
+        await floodRouter(DONO_FAKE, "router-teste", "painel_flood_presets")
+        const tP = enviados[enviados.length - 1]?.content?.text || ""
+        assert(tP.includes("FLOOD · PRESETS") && tP.includes("paymenttest"), "painel 36 lista presets e atalhos")
+        assert(tP.includes("dry-run agora"), "painel 36 mostra o estado do dry-run")
+        // com destino liberado, o atalho REALMENTE roda o motor — em dry-run, então
+        // nada sai; é assim que se prova que o atalho não virou mensagem morta.
+        CONFIG.floodAllowlist = [GRUPO_FAKE]
+        CONFIG.floodDryRun = true
+        fx.clearCooldown("shopping-test")
+        setState("router-teste", { action: "config_menu" })
+        enviados.length = 0
+        await floodRouter(DONO_FAKE, "router-teste", "flood_preset_shopping_test")
+        const tRun = enviados.map(e => e.content?.text || "").join("\n")
+        assert(/DRY-RUN/.test(tRun), "atalho roda o preset e devolve resultado marcado DRY-RUN")
+        assert(/shop|storefront/i.test(tRun), "resultado do shopping-test menciona o card (shop/storefront)")
+        assert(enviados.every(e => e.jid === DONO_FAKE), "resultado do job foi só para o dono — zero broadcast")
+        clearState("router-teste")
+        // overlays: mesmas regras do wizard (surface 4→3, pipes como texto, USAGE)
+        assertEq(shoppingOverlayFromRest("Oi|Title|4|id").overlay.shop.surface, 3, "overlay de loja: surface 4 vira 3")
+        assertEq(shoppingOverlayFromRest("50%|só hoje").overlay.text, "50%|só hoje", "overlay de loja: texto livre preserva pipes")
+        assertEq(shoppingOverlayFromRest("").kind, "default", "overlay vazio = default do preset")
+        assertEq(paymentOverlayFromRest("Pedido|25.90|BRL").overlay.amount, 25.9, "overlay de payment: valor parseado")
+        assert(/AMOUNT_MISSING|USAGE/.test(paymentOverlayFromRest("sem valor").error), "payment sem valor → erro (não roda)")
+        assertEq(paymentOverlayFromRest("").ok, true, "payment vazio = preset default")
+
+        // ── 12) config.json intocado ────────────────────────────────────────────
         if (bytesAntes) {
             const depois = fs.readFileSync(CONFIG_PATH)
             assert(depois.equals(bytesAntes), "config.json NÃO foi escrito por estes testes")

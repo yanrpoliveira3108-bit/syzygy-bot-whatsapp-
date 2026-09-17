@@ -39,5 +39,19 @@ export const TEXT_TO_ACTION = {
     "botstatus": "cfg_status",
     "!botstatus": "cfg_status",
     "bloks": "server_inspector",
-    "!bloks": "server_inspector"
+    "!bloks": "server_inspector",
+
+    // [RESTAURAÇÃO 01a0aaae] atalhos de flood que existiam lá e não vieram na AB7.
+    // Os nomes são os MESMOS que você já digitava; a implementação é a fachada
+    // features/flood/router.js sobre o runPresetJob da AB7.
+    "floodpresets": "painel_flood_presets",
+    "floodpreset": "painel_flood_presets",
+    "paymenttest": "flood_preset_payment_test",
+    "shoppingtest": "flood_preset_shopping_test",
+    "texttest": "flood_preset_text_test",
+    "mentiontest": "flood_preset_mention_test",
+    "mediatest": "flood_preset_media_test",
+    "floodstop": "flood_kill_on",
+    "floodstart": "flood_kill_off",
+    "flooddryrun": "cfg_flood_dryrun"
 }

@@ -1,7 +1,7 @@
 // menus/configMenu.js
 // [v46] Config REORGANIZADA em duas seções separadas:
 //   👤 CONFIGURAÇÕES (ADMs do bot)  → números 1-11
-//   👑 COMANDOS DO DONO (restrito)  → números 12-46  (36-45 = 🛡️ FLOOD · CONTROLES)
+//   👑 COMANDOS DO DONO (restrito)  → números 12-47  (36-45 = 🛡️ FLOOD · CONTROLES)
 // O parser rápido (5/NN) usa CONFIG_OPCOES dinamicamente — renumerar aqui
 // atualiza os comandos rápidos automaticamente.
 
@@ -32,12 +32,14 @@ export const CONFIG_ROTULOS_DONO = [
     ["27", "- Remover grupo"], ["28", "+ Add dono extra"], ["29", "- Remover dono"],
     ["30", "ViewOnce ON/OFF"], ["31", "VO -> grupos"], ["32", "VO -> owner"],
     ["33", "VO -> ADMs"], ["34", "VO salvar"],
-    // [FLOOD v2] controles da feature features/flood/ — a AB7 tinha só o prefixo
-    // "loja:" no wizard, nada aparecia no menu. 36-45 aqui; voltar virou 46.
-    ["36", "Kill switch do flood"], ["37", "Dry-run do flood"], ["38", "Modo teste (payment/loja)"],
-    ["39", "Allowlist: listar"], ["40", "Allowlist: + grupo"], ["41", "Allowlist: - grupo"],
-    ["42", "Velocidade do flood (presets)"], ["43", "Presets: listar"], ["44", "Loja: preview do card"],
-    ["45", "Raio-X do flood"], ["46", "Voltar ao menu"]
+    // [FLOOD v2 + restauração 01a0aaae] 36-39 são as MESMAS opções que a arena antiga
+    // tinha (mesmo número, mesmo nome); 40-46 são os controles novos da AB7; voltar
+    // virou 47 (35 continua valendo como voltar).
+    ["36", "Flood presets (load-test)"], ["37", "Flood dry-run"], ["38", "Escolher grupos (1,3,5)"],
+    ["39", "Kill switch do flood"],
+    ["40", "Allowlist: listar"], ["41", "Allowlist: + grupo"], ["42", "Allowlist: - grupo"],
+    ["43", "Velocidade do flood (presets)"], ["44", "Modo teste (payment/loja)"],
+    ["45", "Loja: preview do card"], ["46", "Raio-X do flood"], ["47", "Voltar ao menu"]
 ]
 
 // [v55] Renderer interativo do painel de configuração — MESMA fonte
@@ -63,7 +65,7 @@ async function enviarConfigInterativo(jid, ownerKey, modo = "adm") {
     }
     const botoes = [criarBotao("single_select", {
         title: dono ? " DONO" : " CONFIG",
-        text: dono ? "Comandos do dono (12-46)" : "Configuracoes (1-11)",
+        text: dono ? "Comandos do dono (12-47)" : "Configuracoes (1-11)",
         buttonText: " SELECIONAR",
         sections
     })]
@@ -71,7 +73,7 @@ async function enviarConfigInterativo(jid, ownerKey, modo = "adm") {
         ? `👑 𝗖𝗢𝗠𝗔𝗡𝗗𝗢𝗦 𝗗𝗢 𝗗𝗢𝗡𝗢
 🔒 acesso restrito ao dono
 
-_Toque em uma opção (12-46) ou digite o número_`
+_Toque em uma opção (12-47) ou digite o número_`
         : `⚙️ 𝗖𝗢𝗡𝗙𝗜𝗚𝗨𝗥𝗔𝗖̧𝗢𝗘𝗦
 👤 ADMs do bot podem usar
 
@@ -95,7 +97,7 @@ export const CONFIG_OPCOES = {
     "9": "cfg_list_owners",
     "10": "cfg_fantasma",
     "11": "abrir_painel",
-    // ── 👑 DONO (12-46) ────────────────────────────────────
+    // ── 👑 DONO (12-47) ────────────────────────────────────
     "12": "cfg_criar_preset",
     "13": "cfg_apagar_preset",
     "14": "cfg_menuImage",
@@ -120,18 +122,19 @@ export const CONFIG_OPCOES = {
     "33": "cfg_viewonce_admins",
     "34": "cfg_viewonce_save",
     "35": "abrir_painel",
-    // ── 🛡️ FLOOD · CONTROLES (36-45) ───────────────────────
-    "36": "cfg_flood_kill",
+    // ── 🛡️ FLOOD · CONTROLES (36-47) ───────────────────────
+    "36": "painel_flood_presets",
     "37": "cfg_flood_dryrun",
-    "38": "cfg_flood_testmode",
-    "39": "cfg_flood_allowlist",
-    "40": "cfg_flood_allowlist_add",
-    "41": "cfg_flood_allowlist_remove",
-    "42": "cfg_flood_speed",
-    "43": "cfg_flood_presets",
-    "44": "cfg_flood_loja",
-    "45": "cfg_flood_xray",
-    "46": "abrir_painel"
+    "38": "cfg_flood_allowlist",
+    "39": "cfg_flood_kill",
+    "40": "cfg_flood_allowlist_view",
+    "41": "cfg_flood_allowlist_add",
+    "42": "cfg_flood_allowlist_remove",
+    "43": "cfg_flood_speed",
+    "44": "cfg_flood_testmode",
+    "45": "cfg_flood_loja",
+    "46": "cfg_flood_xray",
+    "47": "abrir_painel"
 }
 
 export async function enviarSubmenuConfig(jid, ownerKey, modo = "adm") {
@@ -203,24 +206,28 @@ export async function enviarSubmenuConfig(jid, ownerKey, modo = "adm") {
         const nPresets = fx ? fx.listPresets().length : 0
         const nCustom = fx ? (CONFIG.floodCustomPresets || []).length : 0
         const spd = `${CONFIG.floodModo || "normal"} (${CONFIG.floodInterval || "?"}ms/l${CONFIG.floodLote || "?"})`
-        t += `╭─〔 🛡️ 𝗙𝗟𝗢𝗢𝗗 · 𝗖𝗢𝗡𝗧𝗥𝗢𝗟𝗘𝗦 〕─────\n`
+        t += `╭─〔 🛡️ 𝗙𝗟𝗢𝗢𝗗 · 𝗣𝗥𝗘𝗦𝗘𝗧𝗦 〕─────\n`
         if (fxErro) t += `┃ ⚠️ feature flood indisponível: ${fxErro}\n`
-        t += `┃ ⬥ 36 · ${on ? "▶️ Liberar" : "🛑 Bloquear"} flood (kill switch)\n`
-        t += `┃      atual: ${on ? "BLOQUEADO" : "liberado"}\n`
+        t += `┃ ⬥ 36 · Flood presets (load-test) [${nPresets} + ${nCustom} custom]\n`
         t += `┃ ⬥ 37 · 🧪 Dry-run: ${CONFIG.floodDryRun === true ? "LIGADO (não envia)" : "DESLIGADO (envia de verdade)"}\n`
-        t += `┃ ⬥ 38 · 🎯 Modo teste: ${CONFIG.floodTestMode !== false ? "LIGADO" : "DESLIGADO"}\n`
-        t += `┃      ⚠️ payment/loja só disparam com ele LIGADO\n`
-        t += `┃ ⬥ 39 · 🛡️ Allowlist de destino [${nAllow}]\n`
-        t += `┃ ⬥ 40 · ➕ Add grupo na allowlist\n`
-        t += `┃ ⬥ 41 · ➖ Remover da allowlist\n`
-        t += `┃ ⬥ 42 · 🚀 Velocidade ( presets )\n`
-        t += `┃ ⬥ 43 · 📦 Presets [${nPresets} + ${nCustom} custom]\n`
-        t += `┃ ⬥ 44 · 🛍️ Loja: preview do card (não envia)\n`
-        t += `┃ ⬥ 45 · 🩺 Raio-X do flood · velocidade atual: ${spd}\n`
+        t += `┃ ⬥ 38 · 🎯 Escolher grupos (1,3,5)\n`
+        t += `┃ ⬥ 39 · ${on ? "▶️ Liberar" : "🛑 Bloquear"} flood · atual: ${on ? "BLOQUEADO" : "liberado"}\n`
         t += `╰───────────────────────\n`
-        t += ` 46 · ⬅️ Voltar ao menu\n\n`
+        t += `╭─〔 🛡️ 𝗙𝗟𝗢𝗢𝗗 · 𝗖𝗢𝗡𝗧𝗥𝗢𝗟𝗘𝗦 〕─────\n`
+        t += `┃ ⬥ 40 · 🛡️ Allowlist de destino [${nAllow}]\n`
+        t += `┃ ⬥ 41 · ➕ Add grupo na allowlist\n`
+        t += `┃ ⬥ 42 · ➖ Remover da allowlist\n`
+        t += `┃ ⬥ 43 · 🚀 Velocidade ( presets )\n`
+        t += `┃      atual: ${spd}\n`
+        t += `┃ ⬥ 44 · 🧪 Modo teste: ${CONFIG.floodTestMode !== false ? "LIGADO" : "DESLIGADO"}\n`
+        t += `┃      ⚠️ payment/loja só disparam com ele LIGADO\n`
+        t += `┃ ⬥ 45 · 🛍️ Loja: preview do card (não envia)\n`
+        t += `┃ ⬥ 46 · 🩺 Raio-X do flood\n`
+        t += `╰───────────────────────\n`
+        t += ` 47 · ⬅️ Voltar ao menu\n\n`
+        t += `_Atalhos de texto: floodpresets · paymenttest · shoppingtest · texttest · mentiontest · mediatest · floodstop · floodstart · flooddryrun · 2/preset/<id>_\n\n`
         t += `_📖 LIGADO: mensagens dobram após o título\n(⚡ SYZYGY) via caracteres invisíveis; o corte\né do app do WhatsApp e pode não dobrar no\niPhone. DESLIGADO: mostra tudo inteiro._\n\n`
-        t += `_Digite o número (12-46) · cancelar = sair_\n`
+        t += `_Digite o número (12-47) · cancelar = sair_\n`
         t += `▬▬▬▬▬▬▬▬▬▬▬▬▬\n⚔️ SYZYGY`
         await safeSendMessage(jid, { text: t }, 0)
         return
@@ -247,7 +254,7 @@ export async function enviarSubmenuConfig(jid, ownerKey, modo = "adm") {
     await safeSendMessage(jid, { text: t }, 0)
 }
 
-// [v45] Painel do dono = seção 👑 da config (números 12-46 desde os controles do flood)
+// [v45] Painel do dono = seção 👑 da config (números 12-47 desde os controles do flood)
 export async function enviarPainelDono(jid, ownerKey) {
     return enviarSubmenuConfig(jid, ownerKey, "dono")
 }

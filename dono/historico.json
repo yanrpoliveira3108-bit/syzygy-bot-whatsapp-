@@ -46,5 +46,15 @@
     "qtd": 100,
     "modo": "rapido",
     "ok": 41
+  },
+  {
+    "ts": 1789607679413,
+    "data": "2026-09-17T01:14:39.413Z",
+    "tipo": "flood_preset",
+    "preset": "shopping-test",
+    "dryRun": true,
+    "ok": true,
+    "sent": 0,
+    "via": "router"
   }
 ]
