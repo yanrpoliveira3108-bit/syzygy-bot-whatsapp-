@@ -34,6 +34,11 @@ const GRUPO_FAKE = "5519999999999-1234@g.us"
 
 async function main() {
     const bytesAntes = fs.existsSync(CONFIG_PATH) ? fs.readFileSync(CONFIG_PATH) : null
+    // dono/historico.json é dado REAL do bot: qualquer caminho com registrarAcao()
+    // precisa devolver o arquivo byte a byte (dry-run nem deveria escrever, mas
+    // o cinto existe porque um teste que polui histórico do usuário é inaceitável).
+    const HIST_PATH = path.join(RAIZ, "dono", "historico.json")
+    const histAntes = fs.existsSync(HIST_PATH) ? fs.readFileSync(HIST_PATH) : null
 
     const cfg = await import("../../menus/configMenu.js")
     const { CONFIG_OPCOES, CONFIG_ROTULOS_DONO, CONFIG_ROTULOS_ADM, enviarSubmenuConfig } = cfg
@@ -217,6 +222,9 @@ async function main() {
             const depois = fs.readFileSync(CONFIG_PATH)
             assert(depois.equals(bytesAntes), "config.json NÃO foi escrito por estes testes")
         } else skip("sem config.json no checkout (nada a comparar)")
+        if (histAntes) {
+            assert(fs.readFileSync(HIST_PATH).equals(histAntes), "dono/historico.json intocado (dry-run não registra)")
+        } else skip("sem dono/historico.json no checkout")
     } finally {
         CONFIG.uiMode = antes.uiMode
         CONFIG.floodDryRun = antes.dryRun
@@ -230,6 +238,7 @@ async function main() {
         clearState("menu-teste"); clearState("menu-teste2"); clearState("roteador-teste")
         setSock(sockAntes === null ? undefined : sockAntes)
         if (bytesAntes) { try { fs.writeFileSync(CONFIG_PATH, bytesAntes) } catch { } }
+        if (histAntes) { try { fs.writeFileSync(HIST_PATH, histAntes) } catch { } }
     }
 
     console.log(`\n=== FLOOD · MENU: ${passed} ok · ${failed} falhas · ${skipped} skip ===`)

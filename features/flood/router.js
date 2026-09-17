@@ -165,15 +165,19 @@ async function runTestJob(chatJid, ownerKey, { presetId, rest = "", tipo = null,
         qtd: 1,
         dryRun: dryRun == null ? (CONFIG.floodDryRun !== false) : !!dryRun
     })
-    try {
-        const { registrarAcao } = await import("../../services/historicoService.js")
-        registrarAcao("flood_preset", {
-            preset: presetId, dryRun: !!res.dryRun, ok: !!res.ok, sent: res.metrics?.sent,
-            erro: res.error || undefined, via: "router"
-        })
-    } catch { /* histórico é opcional aqui */ }
+    // Só job que mandou de verdade entra no histórico: dry-run é ensaio, e registrar
+    // ensaio transforma dono/historico.json em log de teste.
+    if (!res.dryRun) {
+        try {
+            const { registrarAcao } = await import("../../services/historicoService.js")
+            registrarAcao("flood_preset", {
+                preset: presetId, dryRun: false, ok: !!res.ok, sent: res.metrics?.sent,
+                erro: res.error || undefined, via: "router"
+            })
+        } catch { /* histórico é opcional aqui */ }
+    }
     const rodape = res.dryRun
-        ? "\n\n_DRY-RUN: nada saiu. Para o 1º envio real, desligue o 37 (e mantenha o 36 por perto)._"
+        ? "\n\n_DRY-RUN: nada saiu. Para o 1º envio real, desligue o 37 (e mantenha o 39 por perto)._"
         : ""
     return send(chatJid, `${formatPresetJobResult(res)}${rodape}`)
 }
