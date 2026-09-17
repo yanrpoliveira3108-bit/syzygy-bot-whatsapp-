@@ -221,29 +221,38 @@ const INV = inventario()
 const TIER1 = [
     "package.json", ".npmrc", ".gitignore",
     "index.js",
-    "connection/baileysCompat.js", "connection/whatsapp.js", "connection/sessionRecovery.js", "connection/pairing.js",
+    "connection/baileysCompat.js", "connection/socket.js", "connection/whatsapp.js",
+    "connection/sessionRecovery.js", "connection/pairing.js",
     "utils/config.js", "utils/permissions.js", "utils/stateManager.js", "utils/lerMais.js", "utils/logger.js",
     "commands/commandMap.js", "commands/commandRouter.js",
-    "handlers/messageHandler.js",
+    "handlers/messageHandler.js", "handlers/interactionHandler.js",
     "features/flood/config.js", "features/flood/engine.js", "features/flood/shopping.js", "features/flood/payment.js",
-    "features/flood/allowlist.js", "features/flood/limiter.js", "features/flood/router.js",
+    "features/flood/allowlist.js", "features/flood/limiter.js", "features/flood/killswitch.js", "features/flood/router.js",
     "features/flood/presets/index.js", "features/flood/presets/text.js", "features/flood/presets/mention.js",
     "features/flood/presets/media.js", "features/flood/presets/payment.js", "features/flood/presets/shopping.js",
     "features/flood/presets/shoppingBuilder.js", "features/flood/presets/custom.js",
     "menus/configMenu.js",
     "services/groupService.js",
+    "features/flood/doctor.mjs",
 ]
 const TIER2 = [
-    "handlers/stateHandler.js", "handlers/helpHandler.js", "handlers/antiTakeover.js",
+    "handlers/stateHandler.js", "handlers/terminal.js",
     "services/fastParser.js", "services/interactiveService.js", "services/buttons.js", "services/list.js",
-    "services/lidResolver.js", "services/agendaService.js", "services/bloksTransport.js", "services/mediaService.js",
-    "menus/menu.js", "menus/mainMenu.js", "menus/groupMenu.js", "menus/menutest.js",
-    "features/flood/index.js", "features/flood/presetEngine.js", "features/flood/customStore.js",
-    "features/flood/queue.js", "features/flood/commerce.js", "features/flood/xray.js",
-    "features/viewOnce/config.js", "features/viewOnce/service.js", "features/viewOnce/destinations.js",
-    "features/statusManager/config.js", "features/statusManager/index.js", "features/statusManager/service.js",
+    "services/interactiveList.js", "services/lidResolver.js", "services/agendaService.js",
+    "services/bloksTransport.js", "services/mediaService.js", "services/antiTakeoverService.js",
+    "services/historicoService.js", "services/notificationService.js", "services/presetService.js",
     "services/serverInspector.js",
+    "menus/menu.js", "menus/mainMenu.js", "menus/groupMenu.js", "menus/adminMenu.js", "menus/menutest.js",
+    "features/flood/index.js", "features/flood/groups.js", "features/flood/speed.js", "features/flood/presetEngine.js",
+    "features/flood/customStore.js", "features/flood/queue.js", "features/flood/commerce.js",
+    "features/viewOnce/config.js", "features/viewOnce/index.js", "features/viewOnce/handler.js",
+    "features/viewOnce/permissions.js", "features/viewOnce/service.js", "features/viewOnce/destinations.js",
+    "features/statusManager/config.js", "features/statusManager/index.js", "features/statusManager/presets.js",
+    "features/statusManager/service.js",
+    "actions/configActions.js", "actions/floodActions.js", "actions/groupActions.js",
+    "utils/botoes.js", "utils/terminalUI.js",
     "start.sh", "update.sh", "recover.sh",
+    "features/flood/README.md",
 ]
 
 /** Cabeçalho-comentário do arquivo (as regras que o autor deixou no topo). */
@@ -254,7 +263,7 @@ function cabecalhoComentario(rel, max = 55) {
     for (const x of l) {
         if (out.length >= max) break
         if (x.startsWith("//")) out.push(x)
-        else if (x.trim() === "" && out.length) { /* linha em branco dentro do bloco: continua */ out.push(x) }
+        else if (x.trim() === "" && out.length) out.push(x)
         else if (out.length === 0) continue
         else break
     }
@@ -278,8 +287,7 @@ function ancoras(rel) {
             if (!achados.has(m[1])) achados.set(m[1], n)
         }
     }
-    return [...achados.entries()].sort((a, b) => a[1] - b[1])
-        .map(([n, ln]) => `\`${n}\`:${ln}`).join(" · ")
+    return [...achados.entries()].sort((a, b) => a[1] - b[1]).map(([n, ln]) => `\`${n}\`:${ln}`).join(" · ")
 }
 
 function apiAssinaturas(rel) {
@@ -392,6 +400,39 @@ const tModos = Object.entries(MODOS_FLOOD).length
     "",
     "`floodJitter` vira `true` automaticamente só no modo `seguro`. `LOTE` efetivo no engine = `max(1, min(floodLote, 10))`. `uiMode`: `text` (default) | `buttons` | `list` | `bloks`, com `txt` aceito como alias; `uiModoEfetivo()` trata `bloks` como `text` para os menus (só o Server Inspector usa o transporte bloks)."].join("\n")
     : "_parse de `FLOOD_MODOS` vazio — confira `utils/config.js` manualmente_"
+
+/** Árvore real: diretório → arquivo, LOC e a 1ª linha de descrição do próprio fonte. */
+function arvoreGerada() {
+    const IGN = new Set(["node_modules", ".git", "tmp", "log", "state", "sessao", "dono", "legacy", "tools"])
+    const dirs = ["", "connection", "commands", "utils", "handlers", "services", "menus", "actions",
+        "features/flood", "features/flood/presets", "features/flood/patches", "features/viewOnce",
+        "features/statusManager"]
+    const l = []
+    for (const d of dirs) {
+        const abs = path.join(RAIZ, d || ".")
+        if (!fs.existsSync(abs)) continue
+        const nomes = fs.readdirSync(abs).filter(e => {
+            if (IGN.has(e) || (e.startsWith(".") && ![".gitignore", ".npmrc"].includes(e))) return false
+            const full = path.join(abs, e)
+            if (d === "" && !fs.statSync(full).isFile()) return false
+            if (d === "" && fs.statSync(full).isFile() && !["index.js", "package.json", "start.sh", "update.sh", "recover.sh", "PROMPT-RECONSTRUCAO-SYZYGY.md", "SYZYGY-PROMPT-0.md", "SYZYGY-PROMPT-BUILD.md"].includes(e)) return false
+            return /\.(js|mjs|sh|md|patch)$/.test(e)
+        }).sort()
+        if (!nomes.length) continue
+        l.push(d ? `${d}/` : "./  (raiz)")
+        for (const n of nomes) {
+            const rel = d ? `${d}/${n}` : n
+            if (["PROMPT-RECONSTRUCAO-SYZYGY.md", "SYZYGY-PROMPT-BUILD.md", "SYZYGY-PROMPT-0.md"].includes(n)) continue
+            let bruto
+            try { bruto = ler(rel) } catch { continue }
+            const papel = (bruto.split("\n").slice(0, 4).find(x => /^\/\/ \[|^\/\/ [A-Z]/.test(x.trim()) && x.trim().length > 12) || "")
+                .replace(/^\/\/\s*/, "").slice(0, 58)
+            const mark = n.startsWith("tests") ? " [suíte]" : ""
+            l.push(`  ${n.padEnd(24)} ${String(linhas(bruto)).padStart(4)} l${mark}${papel ? `  · ${papel}` : ""}`)
+        }
+    }
+    return l.join("\n")
+}
 
 // ── 5. documento ────────────────────────────────────────────────────────────
 const doc = `# SYZYGY 2.0 — PROMPT DE BUILD DO ZERO
@@ -519,30 +560,19 @@ node --input-type=module -e 'import("${SPECIFIER}").then(m=>console.log(typeof m
 node --input-type=module -e 'import("./connection/baileysCompat.js").then(m=>console.log("shim:",typeof m.default))'
 \`\`\`
 
-## 2. Árvore
+## 2. Árvore (gerada do disco — com o papel que o próprio arquivo declara no topo)
 
 \`\`\`
-index.js                      boot: config → logger → terminal UI → conexão (10 passos)
-connection/  baileysCompat.js shim único da lib · whatsapp.js socket+wrap "Ler Mais"+eventos
-             sessionRecovery.js reconexão/backoff · pairing.js --pair <numero> (QR opcional)
-commands/    commandMap.js mapa texto→actionId (a superfície abaixo) · commandRouter.js dispatcher
-handlers/    messageHandler.js pipeline dos 10 passos · stateHandler.js wizard (~74 actions)
-             antiTakeover.js · helpHandler.js
-services/    groupService.js executores (flood/nuke/roubo/foto) · fastParser.js modo rápido
-             interactiveService.js/list.js/buttons.js UI · lidResolver.js · agendaService.js
-             serverInspector.js · mediaService.js · bloksTransport.js
-menus/       menu.js (roteador número→ação) · mainMenu.js · groupMenu.js · configMenu.js (1-11/12-47)
-features/    flood/ (engine, shopping, payment, presets, allowlist, limiter, router, xray,
-              customStore, queue, commerce, presetEngine, config, index)
-              viewOnce/ · statusManager/ · inspector.js · agenda.js · restart.js
-utils/       config.js (CONFIG, MAX_FLOOD, FLOOD_MODOS, uiMode) · permissions.js · stateManager.js
-             lerMais.js · logger.js · botoes.js · terminalUI.js
-dono/        estado do dono (fila, kill switch, histórico, presets gravados, lid_map) — criado em runtime
-config.json  único estado de configuração · sessao/ auth da Baileys (gitignored)
-start.sh · update.sh · recover.sh   deploy não-destrutivo (backup antes de qualquer escrita)
+${arvoreGerada()}
 \`\`\`
 
-LOC reais do projeto (sem \`node_modules\`/\`legacy\`): implementação \`${linhasDoFonte().toLocaleString("pt-BR")}\` linhas em ${todos.length} arquivos; suítes de teste separadas.
+Fora da árvore de código, por decisão: \`config.json\` (números reais), \`dono/**\`
+(estado de runtime do dono), \`sessao/**\` (auth), \`log/**\`, \`legacy/**\`
+(implementações mortas — não ressuscitar) e \`features/flood/patches/*.patch\`
+(patches históricos JÁ aplicados ao fonte, não são passo de instalação).
+
+(O total real, com LOC por arquivo, está na tabela abaixo — gerada do disco, não
+contada de cabeça.)
 
 ## 2.1 Inventário (o que existe no projeto e o que este prompt traz)
 
@@ -592,8 +622,10 @@ ${exemploConfig()}
 Regras: chave desconhecida em \`SET_KEYS\` → warning, não exceção; arrays são
 substituídos por completo (sem merge profundo); \`salvarConfig()\` é o único ponto
 de escrita (com snapshot para o \`recover.sh\`); o bot lê no boot e o wizard
-escreve. \`uiMode\` aceita \`"text"\` | \`"interactive"\` e decide qual renderer de
-menu roda (\`uiModoEfetivo\` cai para \`text\` se o socket não suportar interactive).
+escreve. \`uiMode\` aceita \`text\` (default) | \`buttons\` | \`list\` | \`bloks\`
+(\`txt\` é alias de \`text\`); \`uiModoEfetivo()\` é a única leitura — ele trata
+\`bloks\` como \`text\` para os menus e só o Server Inspector enxerga \`bloks\`
+(fonte: \`utils/config.js:13-27\`).
 
 ## 5. Contratos que você não pode improvisar
 
@@ -635,13 +667,16 @@ completos estão no apêndice; aqui vai a obrigação funcional:
 
 - \`MAX_FLOOD = ${MAX_FLOOD}\`; teto por tipo (\`FLOOD_PRESET_HARD_CAP\`); preset
   acima do teto é **cercado**, não recusado em silêncio.
-- Kill switch persistido (\`dono/flood_state.json\`) e checado **por lote** — parar
-  leva no máximo 1 lote.
+- Kill switch: estado em memória + \`config.json\` (\`persist:true\) é que chama
+  \`salvarConfig()\`); checado **por lote** — parar leva no máximo 1 lote.
 - \`dryRun\` não envia e **não** escreve histórico; \`testMode\` gate de
   payment/shopping.
-- Allowlist de grupos de flood é lista explícita; \`addAllowlistJid\` normaliza
-  para \`@s.whatsapp.net\`/\`@g.us\` e não aceita ampliação automática por
-  mensagem.
+- Allowlist de flood vive no \`config.json\**, é lista explícita e **só o dono
+  adiciona** (menu 41) — nenhum preset, nenhum comando de ADM e nenhuma mensagem
+  recebida amplia a allowlist sozinho. \`normalizeTargetJid\` decide a forma final
+  (\`@s.whatsapp.net\` para usuário, \`@g.us\` para grupo) e \`jids\` vazio **não**
+  significa "todo mundo": significa "a própria allowlist" (regra literal de
+  \`features/flood/allowlist.js:73\`).
 - Scripts de deploy nunca fazem \`reset --hard\`/\`checkout -f\`/\`stash drop\`; toda
   escrita vem precedida de backup em \`.syzygy-backup/<ts>/\`.
 - \`sessao/\`, \`config.json\`, \`dono/*\` fora do git.

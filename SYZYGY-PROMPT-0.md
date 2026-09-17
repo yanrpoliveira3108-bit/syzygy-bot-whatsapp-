@@ -145,30 +145,118 @@ node --input-type=module -e 'import("@lucasmod/boruto-vk7-baileys/baileys/lib/in
 node --input-type=module -e 'import("./connection/baileysCompat.js").then(m=>console.log("shim:",typeof m.default))'
 ```
 
-## 2. Árvore
+## 2. Árvore (gerada do disco — com o papel que o próprio arquivo declara no topo)
 
 ```
-index.js                      boot: config → logger → terminal UI → conexão (10 passos)
-connection/  baileysCompat.js shim único da lib · whatsapp.js socket+wrap "Ler Mais"+eventos
-             sessionRecovery.js reconexão/backoff · pairing.js --pair <numero> (QR opcional)
-commands/    commandMap.js mapa texto→actionId (a superfície abaixo) · commandRouter.js dispatcher
-handlers/    messageHandler.js pipeline dos 10 passos · stateHandler.js wizard (~74 actions)
-             antiTakeover.js · helpHandler.js
-services/    groupService.js executores (flood/nuke/roubo/foto) · fastParser.js modo rápido
-             interactiveService.js/list.js/buttons.js UI · lidResolver.js · agendaService.js
-             serverInspector.js · mediaService.js · bloksTransport.js
-menus/       menu.js (roteador número→ação) · mainMenu.js · groupMenu.js · configMenu.js (1-11/12-47)
-features/    flood/ (engine, shopping, payment, presets, allowlist, limiter, router, xray,
-              customStore, queue, commerce, presetEngine, config, index)
-              viewOnce/ · statusManager/ · inspector.js · agenda.js · restart.js
-utils/       config.js (CONFIG, MAX_FLOOD, FLOOD_MODOS, uiMode) · permissions.js · stateManager.js
-             lerMais.js · logger.js · botoes.js · terminalUI.js
-dono/        estado do dono (fila, kill switch, histórico, presets gravados, lid_map) — criado em runtime
-config.json  único estado de configuração · sessao/ auth da Baileys (gitignored)
-start.sh · update.sh · recover.sh   deploy não-destrutivo (backup antes de qualquer escrita)
+./  (raiz)
+  index.js                   45 l  · [REORGANIZAÇÃO] Ponto de entrada do SYZYGY. Apenas COORDEN
+  recover.sh                130 l
+  start.sh                  121 l
+  update.sh                 477 l
+connection/
+  baileysCompat.js           46 l  · [v48→v51] CAMADA DE COMPATIBILIDADE BAILEYS — ÚNICO ponto 
+  pairing.js                 52 l  · [REORGANIZAÇÃO] Fluxo de PAIRING CODE (não QR). Preservado
+  sessionRecovery.js        122 l  · [REORGANIZAÇÃO] Detecção de erros de Signal/Session + recu
+  socket.js                  97 l  · [REORGANIZAÇÃO] Detentor do ÚNICO socket Baileys + estado 
+  whatsapp.js               329 l  · [v24] LID resolver + grupos autorizados blindados + anti-t
+commands/
+  commandMap.js              58 l  · [v45] Mapa alinhado ao menu: 5=Comandos do Dono, 6=Configu
+  commandRouter.js          716 l  · [v27] Owner-only para foto menu, add/remove ADM, add/remov
+utils/
+  botoes.js                 123 l  · [IMPLEMENTAÇÃO] Módulo GENÉRICO e REUTILIZÁVEL de botões N
+  config.js                 132 l  · [v28] Config com donos extras, ADMs, grupos autorizados, L
+  lerMais.js                 47 l  · [v46.1] 📖 "LER MAIS" — dobra mensagens logo após o título
+  logger.js                  73 l  · [REORGANIZAÇÃO] Silenciador de logs sensíveis de sessão, e
+  permissions.js            353 l  · [v28] Permissões: donos (multi), ADMs (users), grupos auto
+  stateManager.js            25 l
+  terminalUI.js              94 l  · [v43] Tema ROXO do SYZYGY. Mesmas funções/assinaturas — só
+handlers/
+  interactionHandler.js      30 l  · [REORGANIZAÇÃO] Ponte entre a UI interativa e o roteador.
+  messageHandler.js         315 l  · [v33] ViewOnce antes de auth + ADM LID imediato + grupos a
+  stateHandler.js          1803 l  · [REORGANIZAÇÃO] Tratador de estados (input texto/imagem) +
+  terminal.js                69 l  · [v43] Terminal virou PAINEL MONITOR (tema roxo). Comandos:
+services/
+  agendaService.js          250 l  · [v22] Agendamento de ações (flood, nuke, roubar) para exec
+  antiTakeoverService.js     76 l  · [v22] Proteção anti-takeover: detecta quando o bot perde a
+  bloksTransport.js         110 l  · [v48] 🧱 HELPER CENTRAL BLOKS/A2UI — ÚNICA fonte de verdad
+  buttons.js                 68 l
+  fastParser.js             725 l  · [v31] Modo rápido universal: todos comandos + configs + ag
+  groupService.js           669 l  · [v29] Ultra rápido: throttle reduzido, lotes maiores, roub
+  historicoService.js        85 l  · [v22] Histórico de ações do SYZYGY — log persistido de nuk
+  interactiveList.js          8 l  · [v51] CAMADA DE COMPATIBILIDADE — a implementação ÚNICA de
+  interactiveService.js     278 l  · [CORREÇÃO] Envio de mensagens interativas NATIVAS (Native 
+  lidResolver.js            171 l  · [v25] Mapeia LID <-> telefone + busca ativa em grupos.
+  list.js                   212 l  · Resolve 90% dos casos de lista não renderizar
+  mediaService.js           120 l  · [REORGANIZAÇÃO] Toda a lógica de mídia/imagem extraída do 
+  notificationService.js     76 l  · [v28] Notificações para dono + grupos autorizados.
+  presetService.js           89 l  · [NOVO] Presets de configuração (nome + bio + foto) para o 
+  serverInspector.js        410 l  · [v47] 🖥️ SERVER INSPECTOR — painel A2UI (bloksWidget "im_
+menus/
+  adminMenu.js               12 l  · [REORGANIZAÇÃO] Painel administrativo (owner_panel / abrir
+  configMenu.js             261 l  · [v46] Config REORGANIZADA em duas seções separadas:
+  groupMenu.js              243 l  · [v26] Cache + safeSend + blindagem
+  mainMenu.js               138 l  · [v35] Menu ultra rápido PV + listas interativas com catego
+  menu.js                   281 l  · Baileys via camada compat (connection/baileysCompat.js) — 
+  menutest.js               132 l  · Construtor puro de botões Native Flow — Sem dependências d
+actions/
+  configActions.js           57 l  · [v24] Status com permissões
+  floodActions.js            20 l  · [REORGANIZAÇÃO] Confirmação de FLOOD (flood_confirm_yes).
+  groupActions.js            48 l  · [REORGANIZAÇÃO] Ações de confirmação de grupo (NUKE / remo
+features/flood/
+  README.md                 489 l
+  allowlist.js              165 l  · [INFRA FLOOD · recuperada da arena 01a0aaae e adaptada ao 
+  commerce.js               125 l  · [SHOPPING] Diagnóstico de `shop.id` — camada PURA de leitu
+  config.js                 288 l  · [SHOPPING] Registro de TIPO/PRESET de conteúdo do flood SY
+  customStore.js            140 l  · [INFRA FLOOD · recuperada da arena 01a0aaae e adaptada ao 
+  doctor.mjs                105 l  · [INFRA FLOOD] Diagnóstico da infraestrutura de presets — S
+  engine.js                 152 l  · [SHOPPING] Camada de ENVIO do conteúdo do flood. Continua 
+  groups.js                  62 l  · [INFRA FLOOD · recuperada da arena 01a0aaae]
+  index.js                  386 l  · API pública da feature FLOOD/SYZYGY + overlay de TEXTO do 
+  killswitch.js              67 l  · [INFRA FLOOD · recuperada da arena 01a0aaae e adaptada ao 
+  limiter.js                167 l  · [INFRA FLOOD · recuperada da arena 01a0aaae e adaptada ao 
+  payment.js                135 l  · [INFRA FLOOD · recuperada da arena 01a0aaae]
+  presetEngine.js           430 l  · [ENGINE DE PRESETS · adaptação arquitetural da arena 01a0a
+  queue.js                  141 l  · [INFRA FLOOD · recuperada da arena 01a0aaae e adaptada ao 
+  router.js                 225 l  · [RESTAURAÇÃO] Fachada de comandos da arena 01a0aaae, recon
+  shopping.js               374 l  · ADAPTER shopping — camada PURA (sem socket, sem fs, sem fi
+  speed.js                  112 l  · [INFRA FLOOD · recuperada da arena 01a0aaae e adaptada ao 
+  tests-infra.js            567 l [suíte]  · [INFRA FLOOD] Testes da infraestrutura de presets recupera
+  tests-menu.js             250 l [suíte]  · [FLOOD v2] Testes da LIGAÇÃO entre o painel do dono (opçõe
+  tests.js                  455 l [suíte]  · Testes do TIPO shopping do flood. Rode:  node features/flo
+features/flood/presets/
+  custom.js                  56 l  · [PRESET · recuperado da arena 01a0aaae — dispatcher fino]
+  index.js                  112 l  · [PRESET · recuperado da arena 01a0aaae e adaptado ao AB7]
+  media.js                   84 l  · [PRESET · recuperado da arena 01a0aaae]
+  mention.js                 68 l  · [PRESET · recuperado da arena 01a0aaae — com a regra de se
+  payment.js                 44 l  · [PRESET · recuperado da arena 01a0aaae]
+  shopping.js                51 l  · Presets do TIPO "shopping" do flood. Arquivo de DADOS: não
+  shoppingBuilder.js         68 l  · [PRESET · ponte para o builder AB7 — NÃO substitui nada do
+  text.js                    25 l  · [PRESET · recuperado da arena 01a0aaae]
+features/flood/patches/
+  69f826a-shopid-diagnostico-opcional.patch  131 l
+  69f826a-shopping-payload-fix.patch  265 l
+features/viewOnce/
+  config.js                  36 l  · [v33] Config ViewOnce com modo sem salvar em disco + desti
+  destinations.js           151 l  · [v35] PV -> owner (mesmo se origem for owner), Grupo -> gr
+  handler.js                127 l  · [v33] Detecção robusta de qualquer ViewOnce (imagem, vídeo
+  index.js                   30 l  · Entry point da feature View Once - exporta API pública e i
+  permissions.js             39 l  · [v33] Permissão ViewOnce: permite qualquer viewOnce recebi
+  service.js                248 l  · [v33] Download em buffer (sem salvar no celular) + temp fi
+  tests.js                   95 l [suíte]  · Camada de testes/verificações para View Once - conforme so
+features/statusManager/
+  config.js                  85 l  · [v41] 🫥 STATUS MANAGER — configuração padrão e constantes
+  index.js                  421 l  · [v42] 🫥 STATUS MANAGER — API pública + roteador de ações 
+  presets.js                105 l  · [v46] 🗂️ PRESETS DE STATUS — textos salvos para publicar 
+  service.js                558 l  · [v41] 🫥 STATUS MANAGER — núcleo: rascunhos, audiência, pu
 ```
 
-LOC reais do projeto (sem `node_modules`/`legacy`): implementação `13.710` linhas em 61 arquivos; suítes de teste separadas.
+Fora da árvore de código, por decisão: `config.json` (números reais), `dono/**`
+(estado de runtime do dono), `sessao/**` (auth), `log/**`, `legacy/**`
+(implementações mortas — não ressuscitar) e `features/flood/patches/*.patch`
+(patches históricos JÁ aplicados ao fonte, não são passo de instalação).
+
+(O total real, com LOC por arquivo, está na tabela abaixo — gerada do disco, não
+contada de cabeça.)
 
 ## 2.1 Inventário (o que existe no projeto e o que este prompt traz)
 
@@ -182,18 +270,18 @@ LOC reais do projeto (sem `node_modules`/`legacy`): implementação `13.710` lin
 | `connection/baileysCompat.js` | 46 | anexado (§9) |
 | `connection/pairing.js` | 52 | anexado (§9) |
 | `connection/sessionRecovery.js` | 122 | anexado (§9) |
-| `connection/socket.js` | 97 | descrito (§10) |
+| `connection/socket.js` | 97 | anexado (§9) |
 | `connection/whatsapp.js` | 329 | anexado (§9) |
 | `features/flood/README.md` | 489 | descrito (§10) |
 | `features/flood/allowlist.js` | 165 | anexado (§9) |
 | `features/flood/commerce.js` | 125 | descrito (§10) |
 | `features/flood/config.js` | 288 | anexado (§9) |
 | `features/flood/customStore.js` | 140 | descrito (§10) |
-| `features/flood/doctor.mjs` | 105 | descrito (§10) |
+| `features/flood/doctor.mjs` | 105 | anexado (§9) |
 | `features/flood/engine.js` | 152 | anexado (§9) |
 | `features/flood/groups.js` | 62 | descrito (§10) |
 | `features/flood/index.js` | 386 | descrito (§10) |
-| `features/flood/killswitch.js` | 67 | descrito (§10) |
+| `features/flood/killswitch.js` | 67 | anexado (§9) |
 | `features/flood/limiter.js` | 167 | anexado (§9) |
 | `features/flood/payment.js` | 135 | anexado (§9) |
 | `features/flood/presetEngine.js` | 430 | descrito (§10) |
@@ -223,7 +311,7 @@ LOC reais do projeto (sem `node_modules`/`legacy`): implementação `13.710` lin
 | `features/viewOnce/permissions.js` | 39 | descrito (§10) |
 | `features/viewOnce/service.js` | 248 | descrito (§10) |
 | `features/viewOnce/tests.js` | 95 | suíte (rode, não reescreva) |
-| `handlers/interactionHandler.js` | 30 | descrito (§10) |
+| `handlers/interactionHandler.js` | 30 | anexado (§9) |
 | `handlers/messageHandler.js` | 315 | anexado (§9) |
 | `handlers/stateHandler.js` | 1803 | descrito (§10) |
 | `handlers/terminal.js` | 69 | descrito (§10) |
@@ -260,7 +348,7 @@ LOC reais do projeto (sem `node_modules`/`legacy`): implementação `13.710` lin
 | `utils/permissions.js` | 353 | anexado (§9) |
 | `utils/stateManager.js` | 25 | anexado (§9) |
 | `utils/terminalUI.js` | 94 | descrito (§10) |
-| **total** | **17.058** | 33 anexados · 28 descritos · suítes citadas |
+| **total** | **17.058** | 37 anexados · 47 descritos · suítes citadas |
 
 ## 3. Comandos que existem (o usuário só digita isto)
 
@@ -467,8 +555,10 @@ Forma (números mascarados; **não** versionado em git):
 Regras: chave desconhecida em `SET_KEYS` → warning, não exceção; arrays são
 substituídos por completo (sem merge profundo); `salvarConfig()` é o único ponto
 de escrita (com snapshot para o `recover.sh`); o bot lê no boot e o wizard
-escreve. `uiMode` aceita `"text"` | `"interactive"` e decide qual renderer de
-menu roda (`uiModoEfetivo` cai para `text` se o socket não suportar interactive).
+escreve. `uiMode` aceita `text` (default) | `buttons` | `list` | `bloks`
+(`txt` é alias de `text`); `uiModoEfetivo()` é a única leitura — ele trata
+`bloks` como `text` para os menus e só o Server Inspector enxerga `bloks`
+(fonte: `utils/config.js:13-27`).
 
 ## 5. Contratos que você não pode improvisar
 
@@ -510,13 +600,16 @@ completos estão no apêndice; aqui vai a obrigação funcional:
 
 - `MAX_FLOOD = 1000`; teto por tipo (`FLOOD_PRESET_HARD_CAP`); preset
   acima do teto é **cercado**, não recusado em silêncio.
-- Kill switch persistido (`dono/flood_state.json`) e checado **por lote** — parar
-  leva no máximo 1 lote.
+- Kill switch: estado em memória + `config.json` (`persist:true) é que chama
+  `salvarConfig()`); checado **por lote** — parar leva no máximo 1 lote.
 - `dryRun` não envia e **não** escreve histórico; `testMode` gate de
   payment/shopping.
-- Allowlist de grupos de flood é lista explícita; `addAllowlistJid` normaliza
-  para `@s.whatsapp.net`/`@g.us` e não aceita ampliação automática por
-  mensagem.
+- Allowlist de flood vive no `config.json**, é lista explícita e **só o dono
+  adiciona** (menu 41) — nenhum preset, nenhum comando de ADM e nenhuma mensagem
+  recebida amplia a allowlist sozinho. `normalizeTargetJid` decide a forma final
+  (`@s.whatsapp.net` para usuário, `@g.us` para grupo) e `jids` vazio **não**
+  significa "todo mundo": significa "a própria allowlist" (regra literal de
+  `features/flood/allowlist.js:73`).
 - Scripts de deploy nunca fazem `reset --hard`/`checkout -f`/`stash drop`; toda
   escrita vem precedida de backup em `.syzygy-backup/<ts>/`.
 - `sessao/`, `config.json`, `dono/*` fora do git.
@@ -564,7 +657,7 @@ Prioridade: Tier 1 (contrato/superfície) sempre entra; Tier 2 (implementações
 enquanto couber no orçamento de 260 KB. O que ficou de fora está listado com a
 assinatura exata de cada exportação — reimplementar a partir delas é suportado.
 
-**Incluídos (33):** `package.json` · `.npmrc` · `.gitignore` · `index.js` · `connection/baileysCompat.js` · `connection/whatsapp.js` · `connection/sessionRecovery.js` · `connection/pairing.js` · `utils/config.js` · `utils/permissions.js` · `utils/stateManager.js` · `utils/lerMais.js` · `utils/logger.js` · `commands/commandMap.js` · `commands/commandRouter.js` · `handlers/messageHandler.js` · `features/flood/config.js` · `features/flood/engine.js` · `features/flood/shopping.js` · `features/flood/payment.js` · `features/flood/allowlist.js` · `features/flood/limiter.js` · `features/flood/router.js` · `features/flood/presets/index.js` · `features/flood/presets/text.js` · `features/flood/presets/mention.js` · `features/flood/presets/media.js` · `features/flood/presets/payment.js` · `features/flood/presets/shopping.js` · `features/flood/presets/shoppingBuilder.js` · `features/flood/presets/custom.js` · `menus/configMenu.js` · `services/groupService.js`
+**Incluídos (37):** `package.json` · `.npmrc` · `.gitignore` · `index.js` · `connection/baileysCompat.js` · `connection/socket.js` · `connection/whatsapp.js` · `connection/sessionRecovery.js` · `connection/pairing.js` · `utils/config.js` · `utils/permissions.js` · `utils/stateManager.js` · `utils/lerMais.js` · `utils/logger.js` · `commands/commandMap.js` · `commands/commandRouter.js` · `handlers/messageHandler.js` · `handlers/interactionHandler.js` · `features/flood/config.js` · `features/flood/engine.js` · `features/flood/shopping.js` · `features/flood/payment.js` · `features/flood/allowlist.js` · `features/flood/limiter.js` · `features/flood/killswitch.js` · `features/flood/router.js` · `features/flood/presets/index.js` · `features/flood/presets/text.js` · `features/flood/presets/mention.js` · `features/flood/presets/media.js` · `features/flood/presets/payment.js` · `features/flood/presets/shopping.js` · `features/flood/presets/shoppingBuilder.js` · `features/flood/presets/custom.js` · `menus/configMenu.js` · `services/groupService.js` · `features/flood/doctor.mjs`
 
 ### package.json — 24 linhas (0.6 KB)
 
@@ -742,6 +835,108 @@ const makeWASocketFn = typeof baileys.default === "function"
 
 export default makeWASocketFn
 export * from "@lucasmod/boruto-vk7-baileys/baileys/lib/index.js"
+
+```
+
+### connection/socket.js — 97 linhas (3.7 KB)
+
+```js
+// connection/socket.js
+// [REORGANIZAÇÃO] Detentor do ÚNICO socket Baileys + estado global de runtime.
+// Nenhum outro módulo deve chamar makeWASocket(): todos leem/escrevem aqui.
+// Isso evita dependência circular (handlers -> socket <- connection) e garante
+// que exista apenas UM socket, como no index.js original.
+
+// [v46] Aplicador do "Ler mais" — usado no wrap ÚNICO de sendMessage abaixo,
+// para que TODA mensagem longa do bot (menus, painéis e respostas de comandos)
+// dobre logo após o título quando o dono liga a opção (CONFIG.lerMais).
+import { aplicarLerMais } from "../utils/lerMais.js"
+
+const runtime = {
+    sock: null,
+    isConnected: false,
+    reconnectAttempts: 0,
+    notificacaoOnlineEnviada: false,
+    cachedGroups: {},
+    groupSelectionCache: {},
+    bootTime: Date.now(),
+
+    isConnecting: false,
+    connectionLock: false,
+    pairingCodeRequested: false,
+
+    sessionErrorLog: [],
+    sessionRecoveryInProgress: false,
+    lastSessionRecovery: 0,
+    sessionRecoveryCount: 0
+}
+
+export function getSock() { return runtime.sock }
+export function setSock(s) { runtime.sock = s }
+
+// Acesso direto ao objeto de runtime para os módulos que precisam mutar flags.
+export function rt() { return runtime }
+
+// ============================================================
+// REGISTRO DE MENSAGENS ENVIADAS PELO PRÓPRIO BOT
+// ============================================================
+// [CORREÇÃO] Em chat consigo mesmo (owner operando do próprio número), o WhatsApp
+// devolve as mensagens que o BOT envia como eventos messages.upsert com
+// fromMe:true. Sem distinguir, o bot processava o próprio texto (ex.: a lista de
+// grupos) como se fosse input do usuário — causando "[GRUPO] Selecionado: [70]"
+// e o loop de "Grupo não encontrado".
+//
+// Solução: registramos o ID de cada mensagem que ENVIAMOS e ignoramos o eco.
+const outgoingIds = new Set()
+const OUTGOING_MAX = 500
+
+export function registrarEnvio(id) {
+    if (!id) return
+    outgoingIds.add(id)
+    // Limita o tamanho do Set (evita crescimento infinito).
+    if (outgoingIds.size > OUTGOING_MAX) {
+        const first = outgoingIds.values().next().value
+        outgoingIds.delete(first)
+    }
+}
+
+export function foiEnviadoPeloBot(id) {
+    return !!id && outgoingIds.has(id)
+}
+
+// Envolve sock.sendMessage e sock.relayMessage UMA vez para auto-registrar os
+// IDs de tudo que o bot envia. Chamado logo após makeWASocket().
+export function instalarRastreioDeEnvios(sock) {
+    if (!sock || sock.__syzygyWrapped) return
+    sock.__syzygyWrapped = true
+
+    const origSend = sock.sendMessage?.bind(sock)
+    if (origSend) {
+        sock.sendMessage = async (jid, ...args) => {
+            // [v46] LER MAIS: insere as linhas invisíveis ANTES do envio real.
+            // Aplicado a texto e a legenda de mídia (menu com imagem), nunca ao
+            // status@broadcast (o texto do status não deve ser dobrado).
+            try {
+                if (typeof jid === "string" && !jid.includes("status@broadcast") && args[0] && typeof args[0] === "object") {
+                    const c = args[0]
+                    if (typeof c.text === "string") c.text = aplicarLerMais(c.text)
+                    else if (typeof c.caption === "string") c.caption = aplicarLerMais(c.caption)
+                }
+            } catch {}
+            const res = await origSend(jid, ...args)
+            try { registrarEnvio(res?.key?.id) } catch {}
+            return res
+        }
+    }
+
+    const origRelay = sock.relayMessage?.bind(sock)
+    if (origRelay) {
+        sock.relayMessage = async (jid, message, opts) => {
+            try { registrarEnvio(opts?.messageId) } catch {}
+            return await origRelay(jid, message, opts)
+        }
+    }
+}
 
 ```
 
@@ -3022,6 +3217,41 @@ export function registrarMessageHandler(sock) {
 
 ```
 
+### handlers/interactionHandler.js — 30 linhas (1.4 KB)
+
+```js
+// handlers/interactionHandler.js
+// [REORGANIZAÇÃO] Ponte entre a UI interativa e o roteador.
+// INTERPRETA a interação (getInteractiveId) e a repassa ao roteador central.
+
+// handlers/interactionHandler.js
+// [REORGANIZAÇÃO] Camada de BOTÃO (button handler): identifica a interação,
+// extrai o ID real e chama a AÇÃO existente (roteadorAcoes). NÃO trata clique
+// como texto — origem separada por logs [BUTTON] e [ACTION].
+
+import { getInteractiveId } from "../services/interactiveService.js"
+import { roteadorAcoes } from "../commands/commandRouter.js"
+
+export { getInteractiveId }
+
+export async function tratarInteracao(chatJid, senderNum, interactionId) {
+    // [BUTTON] = origem: clique/seleção nativa (não é texto digitado).
+    console.log(`[BUTTON] interação recebida | id=${interactionId}`)
+    try {
+        // [v49] O transporte dedupa rowIds duplicados com "#2" — descarta sufixo.
+        let id = String(interactionId || "").split("#")[0]
+        // [v49] Navegação: "voltar_menu" não é ação do roteador — vira menu_inicial
+        // (que o roteador conhece e reabre o painel). cat_*/comandos seguem direto.
+        if (id === "voltar_menu" || id === "menu_inicial") id = "menu_inicial"
+        console.log(`[ACTION] executando=${id}`)
+        await roteadorAcoes(chatJid, senderNum, id)
+    } catch (error) {
+        console.error(`[BUTTON] erro ao processar interação:`, error?.message || error)
+    }
+}
+
+```
+
 ### features/flood/config.js — 288 linhas (14.0 KB)
 
 ```js
@@ -4329,6 +4559,78 @@ export function classifyError(e) {
         return { kind: "permanent", retry: false, abort: true }
     }
     return { kind: "error", retry: false, abort: true }
+}
+
+```
+
+### features/flood/killswitch.js — 67 linhas (2.5 KB)
+
+```js
+// features/flood/killswitch.js
+// [INFRA FLOOD · recuperada da arena 01a0aaae e adaptada ao AB7]
+// Botão de parada global do flood de presets — e CONSULTADO pelo flood clássico
+// (services/groupService.js → executarFlood), que no AB7 não tinha nenhuma
+// forma de interrupção.
+//
+// Estado único, sem duplicar: a chave viva é CONFIG.floodKillSwitch (utils/config.js).
+// O flag de memória existe só para o caso "liguei agora e NÃO quero gravar em
+// config.json" — `persist: true` é que chama salvarConfig().
+//
+// Importante para o AB7: isto NÃO substitui o que o shopping/`features/flood/index.js`
+// já faz, nem adiciona permissão nova. É só um booleano que os laços consultam.
+
+import { CONFIG, salvarConfig } from "../../utils/config.js"
+
+// Flag em memória (desliga sem tocar em disco quando persist=false).
+let memoryKill = false
+const listeners = new Set()
+
+export const KILL_SWITCH_REASON = "KILL_SWITCH"
+
+export function isKillSwitchOn() {
+    return memoryKill === true || CONFIG.floodKillSwitch === true
+}
+
+/** Ligado pela config persistida (independente do flag de memória). */
+export function isKillSwitchPersisted() {
+    return CONFIG.floodKillSwitch === true
+}
+
+/**
+ * @param {boolean} on
+ * @param {{persist?: boolean}} [opts] persist=true grava em config.json
+ * @returns {boolean} estado efetivo depois de aplicar
+ */
+export function setKillSwitch(on, { persist = false } = {}) {
+    memoryKill = !!on
+    CONFIG.floodKillSwitch = !!on
+    if (persist) {
+        try { salvarConfig() } catch {}
+    }
+    for (const fn of [...listeners]) {
+        try { fn(memoryKill) } catch {}
+    }
+    return isKillSwitchOn()
+}
+
+export function toggleKillSwitch({ persist = false } = {}) {
+    return setKillSwitch(!isKillSwitchOn(), { persist })
+}
+
+/** Assina mudanças do kill switch. Devolve unsubscribe (sem listener vazando). */
+export function onKillSwitch(fn) {
+    if (typeof fn !== "function") return () => false
+    listeners.add(fn)
+    return () => listeners.delete(fn)
+}
+
+/** Linha de status para terminal/confirmação — nunca imprime números crus. */
+export function killSwitchStatusTexto() {
+    const estado = isKillSwitchOn() ? "LIGADO (flood bloqueado)" : "desligado"
+    const origem = CONFIG.floodKillSwitch === true
+        ? (memoryKill ? "config + sessão atual" : "config.json")
+        : (memoryKill ? "só nesta execução" : "—")
+    return `⛔ Kill switch do flood: ${estado}\n• origem: ${origem}\n• efeito: interrompe jobs de preset e o flood clássico na próxima iteração.`
 }
 
 ```
@@ -6051,9 +6353,119 @@ export async function cachedGroupMetadata(jid) {
 
 ```
 
+### features/flood/doctor.mjs — 105 linhas (5.1 KB)
+
+```js
+// features/flood/doctor.mjs
+// [INFRA FLOOD] Diagnóstico da infraestrutura de presets — SOMENTE LEITURA.
+//
+// Rode no terminal, na raiz do projeto:
+//   node features/flood/doctor.mjs
+//   node features/flood/doctor.mjs --preset payment-test --qtd 3
+//   node features/flood/doctor.mjs --target 120363...@g.us     (valida as porteiras dele)
+//   node features/flood/doctor.mjs --only shopping,text
+//
+// O que ele faz: carrega o MESMO config.json do bot (carregarConfig), mostra o
+// estado efetivo (kill switch, allowlist mascarada, limites, velocidade) e roda
+// um DRY-RUN de cada tipo de preset. Não envia nada: sem sendMessage, sem
+// sessão, sem escrita em disco. É a forma de conferir a migração antes de ligar
+// o bot.
+//
+// Por que o dry-run usa um executor que ESTOURA se for chamado: assim o próprio
+// doctor prova que nenhum caminho de envio foi tocado.
+
+import { carregarConfig, CONFIG, MAX_FLOOD, FLOOD_MODOS } from "../../utils/config.js"
+import { getAllowlist, maskJid } from "./allowlist.js"
+import { isKillSwitchOn } from "./killswitch.js"
+import { getFloodRuntimeConfig, FLOOD_PRESET_HARD_CAP, listPresetIds, getPresetDef, clampPresetLimits } from "./config.js"
+import { listPresets } from "./presets/index.js"
+import { formatFloodSpeedMenu } from "./speed.js"
+import { runPresetJob } from "./presetEngine.js"
+import { getAuthorizedGroups } from "../../utils/permissions.js"
+
+carregarConfig()
+
+const argv = process.argv.slice(2)
+function argOf(name) {
+    const i = argv.indexOf(`--${name}`)
+    return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : null
+}
+const presetArg = argOf("preset")
+const targetArg = argOf("target")
+const qtdArg = Number(argOf("qtd")) || 3
+const onlyArg = (argOf("only") || "").split(",").map(s => s.trim()).filter(Boolean)
+
+const hr = (t = "─") => console.log(t.repeat(64))
+const line = (k, v) => console.log(`${String(k).padEnd(22)} ${v}`)
+
+hr()
+console.log("SYZYGY · flood presets — diagnóstico (nenhum envio acontece aqui)")
+hr()
+line("MAX_FLOOD (clássico)", MAX_FLOOD)
+line("velocidade atual", `${CONFIG.floodModo || "normal"} · ${CONFIG.floodInterval}ms · lote ${CONFIG.floodLote} · jitter ${CONFIG.floodJitter === true ? "sim" : "não"}`)
+console.log(`FLOOD_MODOS            ${Object.values(FLOOD_MODOS).map(m => m.label).join(" | ")}`)
+console.log(`kill switch            ${isKillSwitchOn() ? "⛔ LIGADO (nada é enviado)" : "desligado"}`)
+const rt = getFloodRuntimeConfig()
+console.log(`runtime                dryRun=${rt.dryRun} · testMode=${rt.testMode} · retries=${rt.maxRetries} · timeout=${rt.timeoutMs}ms`)
+console.log(`hard caps              maxMessages=${FLOOD_PRESET_HARD_CAP.maxMessages} · intervalo≥${FLOOD_PRESET_HARD_CAP.minInterval}ms · conc≤${FLOOD_PRESET_HARD_CAP.maxConcurrency} · cooldown≥${FLOOD_PRESET_HARD_CAP.minCooldown}ms · retries≤${FLOOD_PRESET_HARD_CAP.maxRetries}`)
+const al = getAllowlist()
+console.log(`allowlist              ${al.length ? al.map(maskJid).join(", ") : "⚠️ VAZIA — todo destino de preset fica bloqueado"}`)
+const gruposProtegidos = getAuthorizedGroups().length
+console.log(`grupos protegidos      ${gruposProtegidos} (isAuthorizedGroup — preset nenhum dispara neles)`)
+hr()
+console.log("PRESETS")
+hr()
+for (const p of listPresets()) {
+    console.log(`  ${p.id.padEnd(16)} ${String(p.type).padEnd(9)} ${p.maxMessages}x · ${p.interval}ms · conc ${p.concurrency} · cooldown ${Math.round(p.cooldown / 1000)}s · timeout ${p.timeout}ms`)
+}
+const custom = CONFIG.floodCustomPresets
+if (Array.isArray(custom) && custom.length) {
+    console.log(`  custom persistidos:  ${custom.map(c => `${c.id}(${c.type})`).join(", ")}`)
+}
+hr()
+console.log("DRY-RUN (conteúdo validado, zero envio)")
+hr()
+
+const executorQueNaoDeveRodar = async () => {
+    throw new Error("DRY-RUN TOCOU O EXECUTOR — bug grave")
+}
+const alvos = targetArg ? [targetArg] : (al.length ? [al[0]] : [])
+const ids = presetArg ? [presetArg] : listPresetIds()
+for (const id of ids) {
+    const def = getPresetDef(id)
+    if (!def) {
+        console.log(`  ✗ ${id} — preset desconhecido`)
+        continue
+    }
+    if (onlyArg.length && !onlyArg.includes(def.type)) continue
+    const r = await runPresetJob({
+        presetId: id,
+        targets: alvos,
+        qtd: qtdArg,
+        dryRun: true,
+        executor: executorQueNaoDeveRodar
+    })
+    if (!r.ok && r.error) {
+        console.log(`  ⚠️ ${id.padEnd(16)} ${r.error}${r.remainingMs ? ` (faltam ${Math.ceil(r.remainingMs / 1000)}s)` : ""}${r.blocked?.length ? ` · bloqueados: ${r.blocked.join(", ")}` : ""}`)
+        continue
+    }
+    const keys = r.results?.[0]?.keys || []
+    const wire = r.results?.[0]?.wire ? ` · ${r.results[0].wire}` : ""
+    console.log(`  ✓ ${id.padEnd(16)} tipo=${r.type} · payload=${JSON.stringify(keys)} · alvos=${r.targets.join(",") || "(nenhum)"} · planejado=${r.metrics.planned}x${wire}`)
+    for (const w of r.presetExtra?.warnings || []) console.log(`     ⚠️ ${w}`)
+}
+hr()
+console.log(formatFloodSpeedMenu())
+hr()
+console.log("Sem envio, sem escrita em disco. Para ligar de verdade: use o wizard")
+console.log("flood do bot (o preset entra pelo mesmo executarFlood).")
+process.exit(0)
+
+```
+
 ---
 
-## 10. Descritos, não anexados (28)
+## 10. Descritos, não anexados (47)
 
 ### handlers/stateHandler.js — 1803 linhas (98.7 KB) · NÃO anexado por causa do orçamento
 
@@ -6074,6 +6486,30 @@ export async function processarSelecaoGrupo(chatJid, ownerKey, next, entry)
 Âncoras de roteamento (nome:linha-no-arquivo) — reimplemente cada uma:
 
 `config_menu`:118 · `waiting_name`:142 · `waiting_both_name`:147 · `waiting_bio`:155 · `waiting_both_bio`:160 · `waiting_group_image`:165 · `waiting_image_url`:179 · `waiting_menu_image`:188 · `waiting_flood_message`:210 · `waiting_flood_amount`:244 · `waiting_flood_modo`:252 · `config_set_link`:304 · `preset_apagar`:317 · `preset_novo_nome`:330 · `preset_novo_bio`:335 · `preset_novo_img`:340 · `preset_novo_msg`:363 · `waiting_roubar_preset`:377 · `waiting_tudo_preset`:431 · `waiting_tudo_msg`:460 · `waiting_tudo_name`:499 · `waiting_tudo_bio`:504 · `waiting_tudo_image`:509 · `group_menu`:539 · `group_action_menu`:593 · `group_multi_action`:614 · `multi_flood_message`:659 · `multi_flood_amount`:688 · `multi_flood_modo`:695 · `multi_tudo_preset`:742 · `multi_tudo_msg`:764 · `multi_roubar_preset`:787 · `group_agendar_tipo`:820 · `agendar_flood_message`:846 · `agendar_flood_amount`:851 · `agendar_flood_modo`:861 · `agendar_tudo_preset`:878 · `agendar_tudo_msg`:892 · `agendar_roubar_preset`:899 · `agendar_tempo`:913 · `multi_agendar_tipo`:943 · `multi_agendar_flood_message`:966 · `multi_agendar_flood_amount`:971 · `multi_agendar_flood_modo`:979 · `multi_agendar_tudo_preset`:996 · `multi_agendar_tudo_msg`:1010 · `multi_agendar_roubar_preset`:1017 · `multi_agendar_tempo`:1031 · `config_set_flood_interval`:1051 · `config_set_flood_lote`:1058 · `config_set_flood_modo`:1065 · `config_set_flood_speed`:1087 · `config_set_flood_allowlist_add`:1110 · `config_set_flood_allowlist_remove`:1133 · `config_set_flood_loja`:1147 · `config_set_flood_allowlist_pick`:1171 · `config_add_user`:1208 · `config_remove_user`:1252 · `config_add_group`:1265 · `config_remove_group`:1328 · `config_add_owner`:1341 · `config_remove_owner`:1363 · `agendar_cancelar`:1378 · `waiting_group`:1399 · `status_waiting_text`:1486 · `status_waiting_image`:1496 · `status_waiting_video`:1523 · `status_waiting_audience`:1549 · `status_menu_st`:1572 · `status_preset_select`:1586 · `status_preset_menu`:1613 · `status_preset_criar_nome`:1628 · `status_preset_criar_texto`:1642 · `status_preset_apagar`:1650 · `status_audiencia_menu`:1662 · `status_waiting_group_import`:1676 · `status_priv_menu`:1713
+
+### handlers/terminal.js — 69 linhas (3.3 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// [v43] Terminal virou PAINEL MONITOR (tema roxo). Comandos: SOMENTE no WhatsApp.
+// O readline (ask) continua exportado porque o pairing da 1ª conexão precisa dele.
+//
+//   ┌─ o que mudou ─────────────────────────────────────────────┐
+//   │ - menu [01]-[12] REMOVIDO (todas essas funções já existem │
+//   │   no WhatsApp: menu → 1..7, config, status etc)           │
+//   │ - terminal exibe banner + status e atualiza a cada 60s    │
+//   │ - 'sair' ou Ctrl+C encerra                                │
+//   └───────────────────────────────────────────────────────────┘
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+export const rl
+export const ask
+export async function menuTerminal()
+```
 
 ### services/fastParser.js — 725 linhas (37.7 KB) · NÃO anexado por causa do orçamento
 
@@ -6160,6 +6596,24 @@ export async function sendInteractiveList(sockParam, jid, options)
 export function getListId(m)
 export function chunkRowsToSections(rows, sectionTitlePrefix = "Opções")
 export function paginateRows(rows, maxPerList = 100)
+```
+
+### services/interactiveList.js — 8 linhas (0.5 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// [v51] CAMADA DE COMPATIBILIDADE — a implementação ÚNICA de listas interativas
+// vive em services/list.js. Este arquivo existia como uma SEGUNDA implementação
+// concorrente (enviava com messageId undefined = lista renderizada mas morta,
+// usada pelas páginas de categoria cat_* do roteador) e foi o causador do
+// "abre mas não seleciona". Agora apenas reexporta a fonte única.
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+(sem exportações nomeadas)
 ```
 
 ### services/lidResolver.js — 171 linhas (5.6 KB) · NÃO anexado por causa do orçamento
@@ -6265,6 +6719,116 @@ export function validarTamanho(size)
 export async function fetchImagem(url, prof = 0)
 ```
 
+### services/antiTakeoverService.js — 76 linhas (3.1 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// [v22] Proteção anti-takeover: detecta quando o bot perde admin, é removido,
+// ou quando há mudanças suspeitas nos grupos.
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+export async function handlePerdaAdmin(groupJid, subject)
+export async function handleRemovidoDoGrupo(groupJid, subject)
+export async function handlePromocaoSuspeita(groupJid, subject, promotedIds)
+export function getStatusAntiTakeover()
+```
+
+### services/historicoService.js — 85 linhas (2.5 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// [v22] Histórico de ações do SYZYGY — log persistido de nukes, roubos, floods, etc.
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+export function registrarAcao(tipo, detalhes = {})
+export function listarHistorico(qtd = 20)
+export function limparHistorico()
+export function gerarRelatorio()
+export function formatarHistoricoTexto(qtd = 15)
+```
+
+### services/notificationService.js — 76 linhas (2.6 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// [v28] Notificações para dono + grupos autorizados.
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+export async function enviarNotifNovoGrupo(jid, info)
+export async function enviarNotifAdminRecebido(ownerKey, groupJid, subject)
+export async function notificarBotOnline()
+```
+
+### services/presetService.js — 89 linhas (2.9 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// [NOVO] Presets de configuração (nome + bio + foto) para o comando 13.
+// - Persistidos em ./dono/presets/presets.json
+// - Fotos salvas em ./dono/presets/preset_<id>.jpg
+// - Criados AUTOMATICAMENTE quando o usuário usa o 13 informando nome/bio/foto.
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+export function carregarPresets()
+export function getPreset(indice1)
+export function fotoPresetPath(preset)
+export function salvarNovoPreset({ nome, bio, bufferFoto, mensagem })
+export function apagarPreset(indice1)
+export function listarPresetsTexto()
+```
+
+### services/serverInspector.js — 410 linhas (18.2 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// [v47] 🖥️ SERVER INSPECTOR — painel A2UI (bloksWidget "im_a2ui") com dados
+// REAIS do servidor onde o bot executa (Termux/Android, Linux).
+//
+// ARQUITETURA (conforme especificado):
+//   collectServerInfo()      → coleta métricas reais (os / fs / process / /proc)
+//   formatServerInfo()       → formata (bytes, %, uptime) sem alterar a UI
+//   createServerInspectorData() → monta a estrutura A2UI EXISTENTE + valores reais
+//   sendServerInspector()    → interactiveMessage + nativeFlowMessage(bloksWidget)
+//                              → relayMessage() (mesmo mecanismo já usado no bot)
+//
+// UI: a estrutura (layouts hero, system, resources, node_memory, swap, network,
+// runtime; componentes Text/Divider/Slider; IDs e catalogId FIXOS) é intocável.
+// A ÚNICA coisa dinâmica são os VALORES.
+//
+// TRATAMENTO DE ERROS: cada métrica é isolada — falha → "N/A" — e NUNCA derruba
+// o painel. Nada é aleatório, aproximado ou de demonstração.
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+export async function collectServerInfo()
+export function formatBytes(bytes)
+export function formatPct(pct, casas = 1)
+export function formatUptime(seg)
+export function formatServerInfo(info)
+export function createServerInspectorData(infoReal)
+export function serverInspectorTexto(d)
+export async function sendServerInspector(sock, jid)
+```
+
 ### menus/menu.js — 281 linhas (17.4 KB) · NÃO anexado por causa do orçamento
 
 As regras do arquivo, direto do topo dele:
@@ -6333,6 +6897,20 @@ export async function enviarMenuMultiAcoes(jid, grupos, ownerKey)
 export async function enviarMenuFloodModos(jid, ownerKey, info = {})
 ```
 
+### menus/adminMenu.js — 12 linhas (0.4 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// [REORGANIZAÇÃO] Painel administrativo (owner_panel / abrir_painel).
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+export async function enviarPainelAdmin(from)
+```
+
 ### menus/menutest.js — 132 linhas (6.8 KB) · NÃO anexado por causa do orçamento
 
 As regras do arquivo, direto do topo dele:
@@ -6388,6 +6966,53 @@ export function resolveShoppingSend(rest = "", { presetId = null, delivery = nul
 export function shoppingPromptText(presetId = null)
 export const SHOPPING_PROMPT
 export function floodContentBuilderFor(state)
+```
+
+### features/flood/groups.js — 62 linhas (2.4 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// [INFRA FLOOD · recuperada da arena 01a0aaae]
+// Alvos de um job de preset: SEMPRE escolha explícita (1 grupo, ou 1,3,5).
+// Não existe varredura de "todos os grupos" nem de "todos os contatos" aqui —
+// quem resolve o índice é o cache de grupos que o AB7 já mantém
+// (rt().cachedGroups, services/groupService.js), e quem autoriza é a allowlist.
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+export const TARGETS_REQUIRED
+export function parseSelectedGroups(cache, raw)
+export function extractTargetJids(list)
+```
+
+### features/flood/speed.js — 112 linhas (4.3 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// [INFRA FLOOD · recuperada da arena 01a0aaae e adaptada ao AB7]
+// NÃO é um segundo sistema de velocidade. O AB7 já resolve ritmo em
+// getFloodConfig() (services/groupService.js) a partir de FLOOD_MODOS + CONFIG
+// (utils/config.js: floodModo / floodInterval / floodLote / floodJitter).
+// Este módulo só faz a ponte preset → esses MESMOS valores, para o preset não
+// inventar intervalo nem lote próprio.
+//
+// Saída sempre compatível com getFloodConfig(objeto) e, portanto, com
+// executarFlood(jid, msg, qtd, cfg, builder): { modo, intervaloMs, lote, jitter }.
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+export const CUSTOM_INTERVAL_MIN
+export const CUSTOM_INTERVAL_MAX
+export function resolveFloodSpeed(raw)
+export function formatFloodSpeedMenu()
+export function applyFloodSpeed(preset, cfg)
+export function toFloodOpts(cfg)
 ```
 
 ### features/flood/presetEngine.js — 430 linhas (18.3 KB) · NÃO anexado por causa do orçamento
@@ -6529,6 +7154,50 @@ Exportações (assinaturas exatas):
 export const VIEW_ONCE_CONFIG
 ```
 
+### features/viewOnce/index.js — 30 linhas (1.1 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// Entry point da feature View Once - exporta API pública e integração.
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+export async function onMessageViewOnce({ chatJid, senderJid, isGroup, webMessageInfo })
+```
+
+### features/viewOnce/handler.js — 127 linhas (4.8 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// [v33] Detecção robusta de qualquer ViewOnce (imagem, vídeo, áudio, doc, sticker, ptt)
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+export function detectViewOnce(m)
+export async function handleViewOnceMessage({ chatJid, senderJid, isGroup, webMessageInfo })
+```
+
+### features/viewOnce/permissions.js — 39 linhas (1.7 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// [v33] Permissão ViewOnce: permite qualquer viewOnce recebido pelo bot, destinos controlados.
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+export function canProcessViewOnce({ senderJid, chatJid, isGroup })
+export function canReceiveAsDestination({ jid, type })
+```
+
 ### features/viewOnce/service.js — 248 linhas (9.1 KB) · NÃO anexado por causa do orçamento
 
 As regras do arquivo, direto do topo dele:
@@ -6633,6 +7302,27 @@ export async function statusRouter(chatJid, senderKey, actionId)
 
 `status_menu`:198 · `status_texto`:223 · `status_imagem`:228 · `status_video`:233 · `status_preset_postar`:239 · `status_preset_menu`:251 · `status_preset_criar`:256 · `status_preset_apagar`:261 · `status_audiencia`:273 · `status_audiencia_contatos`:278 · `status_audiencia_custom`:287 · `status_audiencia_ver`:292 · `status_import_grupo`:309 · `status_privacidade`:340 · `status_priv_all`:345 · `status_priv_contacts`:346 · `status_priv_none`:347 · `status_ver`:357 · `status_erros`:362 · `status_publicar`:367 · `status_cancelar`:398 · `status_limpar_fila`:411
 
+### features/statusManager/presets.js — 105 linhas (3.9 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// [v46] 🗂️ PRESETS DE STATUS — textos salvos para publicar rápido.
+// Regra de papel (v46): qualquer ADM do bot pode POSTAR um preset (7 > 4);
+// criar/apagar é restrito ao DONO (7 > 11). Persistência: dono/status_presets.json.
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+export function listarStatusPresets()
+export function obterStatusPreset(idx1)
+export function criarStatusPreset(nome, texto)
+export function apagarStatusPreset(idx1)
+export function statusPresetsTexto(acao = "postar")
+export function menuPresetGerenciarTexto()
+```
+
 ### features/statusManager/service.js — 558 linhas (25.5 KB) · NÃO anexado por causa do orçamento
 
 As regras do arquivo, direto do topo dele:
@@ -6671,40 +7361,120 @@ export function verConfigTexto()
 export function verErrosTexto(qtd = 5)
 ```
 
-### services/serverInspector.js — 410 linhas (18.2 KB) · NÃO anexado por causa do orçamento
+### actions/configActions.js — 57 linhas (2.7 KB) · NÃO anexado por causa do orçamento
 
 As regras do arquivo, direto do topo dele:
 
 ```js
-// [v47] 🖥️ SERVER INSPECTOR — painel A2UI (bloksWidget "im_a2ui") com dados
-// REAIS do servidor onde o bot executa (Termux/Android, Linux).
-//
-// ARQUITETURA (conforme especificado):
-//   collectServerInfo()      → coleta métricas reais (os / fs / process / /proc)
-//   formatServerInfo()       → formata (bytes, %, uptime) sem alterar a UI
-//   createServerInspectorData() → monta a estrutura A2UI EXISTENTE + valores reais
-//   sendServerInspector()    → interactiveMessage + nativeFlowMessage(bloksWidget)
-//                              → relayMessage() (mesmo mecanismo já usado no bot)
-//
-// UI: a estrutura (layouts hero, system, resources, node_memory, swap, network,
-// runtime; componentes Text/Divider/Slider; IDs e catalogId FIXOS) é intocável.
-// A ÚNICA coisa dinâmica são os VALORES.
-//
-// TRATAMENTO DE ERROS: cada métrica é isolada — falha → "N/A" — e NUNCA derruba
-// o painel. Nada é aleatório, aproximado ou de demonstração.
+// [v24] Status com permissões
 ```
 
 Exportações (assinaturas exatas):
 
 ```ts
-export async function collectServerInfo()
-export function formatBytes(bytes)
-export function formatPct(pct, casas = 1)
-export function formatUptime(seg)
-export function formatServerInfo(info)
-export function createServerInspectorData(infoReal)
-export function serverInspectorTexto(d)
-export async function sendServerInspector(sock, jid)
+export async function cfgMenuImage(chatJid, ownerKey)
+export async function cfgOwner(chatJid)
+export async function cfgNumber(chatJid)
+export async function cfgStatus(chatJid)
+export async function cfgRestart(chatJid, ownerKey, clearState)
+```
+
+### actions/floodActions.js — 20 linhas (0.7 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// [REORGANIZAÇÃO] Confirmação de FLOOD (flood_confirm_yes).
+// Só executa se o estado atual for waiting_flood_confirm (segurança).
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+export async function confirmarFlood(chatJid, ownerKey)
+```
+
+### actions/groupActions.js — 48 linhas (2.1 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// [REORGANIZAÇÃO] Ações de confirmação de grupo (NUKE / remover foto) e a
+// listagem textual de grupos (owner_grupos / painel_listar_grupos).
+// Cada confirmação SÓ executa se o estado atual for o esperado (segurança).
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+export async function listarGruposTexto(chatJid, ownerKey)
+export async function confirmarNuke(chatJid, ownerKey)
+export async function confirmarRemoverFoto(chatJid, ownerKey)
+```
+
+### utils/botoes.js — 123 linhas (4.8 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// [IMPLEMENTAÇÃO] Módulo GENÉRICO e REUTILIZÁVEL de botões Native Flow.
+//
+// Responsabilidade ÚNICA: construir o payload de um botão e validar os dados.
+// NÃO conhece "painel", "config", "menu" nem qualquer comando. Quem sabe o que
+// cada id significa é o handler/roteador (commands/commandRouter.js).
+//
+// Formato de saída: { name, buttonParamsJson } — exatamente o que o projeto já
+// usa e o que o Baileys 7.0.0-rc14 espera dentro de nativeFlowMessage.buttons.
+//
+// IMPORTANTE sobre as chaves do JSON interno (contrato do WhatsApp, não do Baileys):
+//   quick_reply    -> { display_text, id }
+//   cta_copy       -> { display_text, copy_code }
+//   cta_url        -> { display_text, url }
+//   single_select  -> { title, text, buttonText, sections:[{ title, rows:[{title,description,id,rowId}] }] }
+//
+// A API pública usa nomes amigáveis (displayText, copyCode, rowId) e este módulo
+// traduz para o contrato acima — assim o resto do bot não repete JSON à mão.
+
+// ------------------------------------------------------------------
+// Normalização de rows do single_select.
+// Aceita rowId OU id (o dispatcher do projeto lê "id" na resposta), e garante
+// AMBOS presentes para máxima compatibilidade de renderização/seleção.
+// ------------------------------------------------------------------
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+export function criarBotao(tipo, dados = {})
+export function criarBotoes(lista = [])
+export function criarLista(dados = {})
+```
+
+Âncoras de roteamento (nome:linha-no-arquivo) — reimplemente cada uma:
+
+`quick_reply`:54 · `cta_copy`:65 · `cta_url`:77 · `single_select`:88
+
+### utils/terminalUI.js — 94 linhas (5.1 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// [v43] Tema ROXO do SYZYGY. Mesmas funções/assinaturas — só a identidade visual mudou.
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+export function bannerSYZYGY()
+export function painelStatus(dados)
+export function boot(msg)
+export function ok(msg)
+export function err(msg)
+export function warn(msg)
+export function info(tag, msg)
+export function credLine()
+export function formatUptime(ms)
+export const COLORS
 ```
 
 ### start.sh — 121 linhas (3.2 KB) · NÃO anexado por causa do orçamento
@@ -6731,7 +7501,21 @@ Exportações (assinaturas exatas):
 (sem exportações nomeadas)
 ```
 
-> Arquivos citados e ausentes neste snapshot: handlers/helpHandler.js, handlers/antiTakeover.js, features/flood/xray.js
+### features/flood/README.md — 489 linhas (25.0 KB) · NÃO anexado por causa do orçamento
+
+As regras do arquivo, direto do topo dele:
+
+```js
+// • conta consultada: 5519…@s.whatsapp.net
+// • ids candidatos: 9911 (Camiseta) [catalog.productId] · 7788 (Verão) [collections.id]
+// • veredito do preset: '…' é URL, não id de catálogo/vitrine.
+```
+
+Exportações (assinaturas exatas):
+
+```ts
+(sem exportações nomeadas)
+```
 
 ---
 
