@@ -11,16 +11,6 @@ import { CONFIG, MENU_IMAGE_PATH, MAX_FLOOD, salvarConfig, FLOOD_MODOS } from ".
 import { info, ok, warn } from "../utils/terminalUI.js"
 import { isOwner } from "../utils/permissions.js"
 import { STATUS_MENU_MAP } from "../features/statusManager/index.js"
-// [SHOPPING] TIPO de conteúdo do flood. Só conteúdo/validação/envio pontual:
-// laço, fila, throttle e permissões continuam sendo os do flood existente.
-import {
-    detectShoppingTrigger,
-    resolveShoppingSend,
-    shoppingPromptText,
-    makeFloodContentBuilder,
-    describeSendWire,
-    SHOPPING_LIMITS
-} from "../features/flood/index.js"
 
 import {
     alterarNomeGrupo, alterarBioGrupo,
@@ -204,38 +194,7 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
     }
 
     // Flood single - mensagem
-    // [SHOPPING] "loja:" / "shop:" / "shopping:" escolhe o TIPO de conteúdo do
-    // flood dentro do MESMO wizard (sem menu novo, sem fila, sem executor novo).
-    // Sem gatilho, cada linha abaixo é o flood clássico de sempre.
     if (st.action === "waiting_flood_message" && text) {
-        const loja = detectShoppingTrigger(text)
-        if (loja.isShopping) {
-            const r = resolveShoppingSend(loja.rest, { delivery: loja.delivery })
-            if (!r.ok) {
-                // 1ª tentativa errada: prompt completo da loja. Depois disso só o
-                // erro — o dono precisa de resposta em TODA tentativa, senão o
-                // wizard parece travado.
-                if (!st.avisouLoja) {
-                    setState(ownerKey, { ...st, avisouLoja: true })
-                    await enviarCancelavel(chatJid, `⚠️ ${r.code}\n${r.message}\n\n${shoppingPromptText()}`)
-                } else {
-                    await sock.sendMessage(chatJid, { text: `⚠️ ${r.code}: ${r.message}` })
-                }
-                return true
-            }
-            setState(ownerKey, {
-                action: "waiting_flood_amount",
-                groupJid: st.groupJid,
-                selectedGroup: st.selectedGroup,
-                floodMessage: r.content.text,
-                floodKind: "shopping",
-                floodContent: r.content,
-                floodWarnings: r.warnings || []
-            })
-            const av = (r.warnings || []).length ? `\n\n⚠️ ${r.warnings.join("\n⚠️ ")}` : ""
-            await enviarCancelavel(chatJid, `🛍️ *TIPO LOJA pronto*\n${r.summary}${av}\n\nDigite a *quantidade* (máx ${MAX_FLOOD}):`)
-            return true
-        }
         setState(ownerKey, { action: "waiting_flood_amount", groupJid: st.groupJid, floodMessage: text, selectedGroup: st.selectedGroup })
         await enviarCancelavel(chatJid, `Digite a *quantidade* (máx ${MAX_FLOOD}):`)
         return true
@@ -245,7 +204,7 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         const qtd = parseInt(text.replace(/\D/g, ""))
         if (isNaN(qtd) || qtd < 1) { await sock.sendMessage(chatJid, { text: "Quantidade invalida." }); return true }
         const q = Math.min(qtd, MAX_FLOOD)
-        await enviarMenuFloodModos(chatJid, ownerKey, { qtd: q, groupJid: st.groupJid, floodMessage: st.floodMessage, floodKind: st.floodKind, floodContent: st.floodContent, floodWarnings: st.floodWarnings })
+        await enviarMenuFloodModos(chatJid, ownerKey, { qtd: q, groupJid: st.groupJid, floodMessage: st.floodMessage })
         return true
     }
     // Flood single - modo
@@ -269,33 +228,14 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
             }
         }
         clearState(ownerKey)
-        // [SHOPPING] tipo de conteúdo: o mesmo executarFlood, com um builder de
-        // conteúdo por iteração. floodKind ausente/text → comportamento idêntico ao
-        // de sempre ({ text: corpo }).
-        const ehLoja = st.floodKind === "shopping" && !!st.floodContent
         let msgFlood = st.floodMessage
-        if (CONFIG.linkDivulgacao) {
-            if (ehLoja) {
-                const comLink = `${msgFlood} · ${CONFIG.linkDivulgacao}`
-                // Link NA MESMA LINHA: o hook global de "Ler Mais" (connection/socket.js)
-                // enche de ~4000 U+034F qualquer content.text multi-linha, e isso não
-                // pode entrar no corpo de um card de loja. Se não couber no limite, o
-                // link é omitido (o card é maior que o rodapé de divulgação).
-                if (comLink.length <= SHOPPING_LIMITS.body) msgFlood = comLink
-            } else {
-                msgFlood += `\n${CONFIG.linkDivulgacao}`
-            }
-        }
-        const builder = ehLoja ? makeFloodContentBuilder(st.floodContent) : null
-        const avisosLoja = (st.floodWarnings || []).length ? `\n⚠️ ${st.floodWarnings.join("\n⚠️ ")}` : ""
-        await sock.sendMessage(chatJid, { text: `Enviando ${st.floodQtd} msgs em modo ${cfg.modo} (${cfg.intervalo}ms/lote${cfg.lote})...${ehLoja ? `\nTIPO: 🛍️ loja (shopStorefrontMessage)` : ""}` })
+        if (CONFIG.linkDivulgacao) msgFlood += `\n${CONFIG.linkDivulgacao}`
+        await sock.sendMessage(chatJid, { text: `Enviando ${st.floodQtd} msgs em modo ${cfg.modo} (${cfg.intervalo}ms/lote${cfg.lote})...` })
         try {
-            const r = await executarFlood(st.groupJid, msgFlood, st.floodQtd, cfg, builder)
+            const r = await executarFlood(st.groupJid, msgFlood, st.floodQtd, cfg)
             const { registrarAcao } = await import("../services/historicoService.js")
-            registrarAcao("flood", { id: st.groupJid, subject: st.selectedGroup?.subject || st.groupJid, qtd: r.total, modo: r.modo, ok: r.ok, tipo: ehLoja ? "shopping" : "text" })
-            let resFlood = `Flood finalizado.\nModo: ${r.modo} | ${r.intervalo}ms/lote${r.lote}\nEnviadas: ${r.ok}/${r.total}${r.erros ? `\nFalhas: ${r.erros}` : ""}`
-            if (ehLoja) resFlood += `\n${describeSendWire(st.floodContent)}${avisosLoja}`
-            await enviarVoltar(chatJid, resFlood)
+            registrarAcao("flood", { id: st.groupJid, subject: st.selectedGroup?.subject || st.groupJid, qtd: r.total, modo: r.modo, ok: r.ok })
+            await enviarVoltar(chatJid, `Flood finalizado.\nModo: ${r.modo} | ${r.intervalo}ms/lote${r.lote}\nEnviadas: ${r.ok}/${r.total}${r.erros ? `\nFalhas: ${r.erros}` : ""}`)
         } catch (e) { await enviarVoltar(chatJid, `Erro: ${e.message}`) }
         return true
     }
@@ -618,7 +558,7 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         if (!grupos.length) { clearState(ownerKey); await enviarVoltar(chatJid, "Seleção expirada."); return true }
         if (escolha === "1") {
             setState(ownerKey, { action: "multi_flood_message", multiGroups: grupos })
-            await enviarCancelavel(chatJid, `Digite a mensagem para FLOOD em ${grupos.length} grupos. _Loja: loja:0 · loja:texto · loja:texto|title|surface|id_`)
+            await enviarCancelavel(chatJid, `Digite a mensagem para FLOOD em ${grupos.length} grupos:`)
             return true
         }
         if (escolha === "2") {
@@ -657,30 +597,6 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
 
     // Multi flood
     if (st.action === "multi_flood_message" && text) {
-        const loja = detectShoppingTrigger(text)
-        if (loja.isShopping) {
-            const r = resolveShoppingSend(loja.rest, { delivery: loja.delivery })
-            if (!r.ok) {
-                if (!st.avisouLoja) {
-                    setState(ownerKey, { ...st, avisouLoja: true })
-                    await enviarCancelavel(chatJid, `⚠️ ${r.code}\n${r.message}\n\n${shoppingPromptText()}`)
-                } else {
-                    await sock.sendMessage(chatJid, { text: `⚠️ ${r.code}: ${r.message}` })
-                }
-                return true
-            }
-            setState(ownerKey, {
-                action: "multi_flood_amount",
-                multiGroups: st.multiGroups,
-                floodMessage: r.content.text,
-                floodKind: "shopping",
-                floodContent: r.content,
-                floodWarnings: r.warnings || []
-            })
-            const av = (r.warnings || []).length ? `\n\n⚠️ ${r.warnings.join("\n⚠️ ")}` : ""
-            await enviarCancelavel(chatJid, `🛍️ *TIPO LOJA pronto* (${st.multiGroups.length} grupos)\n${r.summary}${av}\n\nQtd para ${st.multiGroups.length} grupos (máx ${MAX_FLOOD} cada):`)
-            return true
-        }
         setState(ownerKey, { action: "multi_flood_amount", multiGroups: st.multiGroups, floodMessage: text })
         await enviarCancelavel(chatJid, `Qtd para ${st.multiGroups.length} grupos (máx ${MAX_FLOOD} cada):`)
         return true
@@ -689,7 +605,7 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         const qtd = parseInt(text.replace(/\D/g, ""))
         if (isNaN(qtd) || qtd < 1) { await sock.sendMessage(chatJid, { text: "Quantidade invalida." }); return true }
         const q = Math.min(qtd, MAX_FLOOD)
-        await enviarMenuFloodModos(chatJid, ownerKey, { qtd: q, multiGroups: st.multiGroups, floodMessage: st.floodMessage, multi: true, floodKind: st.floodKind, floodContent: st.floodContent, floodWarnings: st.floodWarnings })
+        await enviarMenuFloodModos(chatJid, ownerKey, { qtd: q, multiGroups: st.multiGroups, floodMessage: st.floodMessage, multi: true })
         return true
     }
     if (st.action === "multi_flood_modo" && text) {
@@ -713,20 +629,11 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         }
         const grupos = st.multiGroups
         clearState(ownerKey)
-        const ehLoja = st.floodKind === "shopping" && !!st.floodContent
         let msgFlood = st.floodMessage
-        if (CONFIG.linkDivulgacao) {
-            if (ehLoja) {
-                const comLink = `${msgFlood} · ${CONFIG.linkDivulgacao}`
-                if (comLink.length <= SHOPPING_LIMITS.body) msgFlood = comLink
-            } else {
-                msgFlood += `\n${CONFIG.linkDivulgacao}`
-            }
-        }
-        const builderLote = ehLoja ? makeFloodContentBuilder(st.floodContent) : null
-        await sock.sendMessage(chatJid, { text: `Flood em lote: ${grupos.length} grupos, ${st.floodQtd} msgs cada, modo ${cfg.modo}...${ehLoja ? " [TIPO LOJA]" : ""}` })
+        if (CONFIG.linkDivulgacao) msgFlood += `\n${CONFIG.linkDivulgacao}`
+        await sock.sendMessage(chatJid, { text: `Flood em lote: ${grupos.length} grupos, ${st.floodQtd} msgs cada, modo ${cfg.modo}...` })
         try {
-            const resultados = await executarFloodLote(grupos, msgFlood, st.floodQtd, builderLote ? { ...cfg, buildContent: builderLote } : cfg)
+            const resultados = await executarFloodLote(grupos, msgFlood, st.floodQtd, cfg)
             const okG = resultados.filter(r => r.ok).length
             const { registrarAcao } = await import("../services/historicoService.js")
             registrarAcao("flood_lote", { grupos: grupos.length, qtd: st.floodQtd, modo: cfg.modo, okGrupos: okG })
@@ -1632,9 +1539,7 @@ export async function processarSelecaoGrupo(chatJid, ownerKey, next, entry) {
         waiting_both_name: `📝 Digite o nome (depois a bio):\n${entry.subject}`,
         waiting_group_image: `📷 Envie a imagem (foto ou documento).\nFormatos: JPG, PNG, WEBP.`,
         waiting_image_url: `🔗 Envie a URL direta da imagem:`,
-        // Uma linha só de propósito: o hook global de "Ler Mais" dobra qualquer
-        // content.text multi-linha (e o dono não precisa disso num prompt de flood).
-        waiting_flood_message: `Digite a mensagem (1 linha). _Loja: loja:0 · loja:texto · loja:texto|title|surface|id — surface 1=FB, 2=IG, 3=WA_`,
+        waiting_flood_message: `Digite a mensagem:`
     }
     if (map[next]) {
         setState(ownerKey, { action: next, groupJid: entry.id, selectedGroup: { id: entry.id, subject: entry.subject, isAdmin: entry.isAdmin } })

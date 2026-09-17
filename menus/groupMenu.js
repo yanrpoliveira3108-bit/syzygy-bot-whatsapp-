@@ -207,13 +207,7 @@ export async function enviarMenuFloodModos(jid, ownerKey, info = {}) {
     const { CONFIG, FLOOD_MODOS } = await import("../utils/config.js")
     const atual = CONFIG.floodModo || "normal"
     const qtd = info.qtd || "?"
-    // [SHOPPING] o modo controla SÓ a velocidade; o tipo do conteúdo já foi
-    // decidido no passo da mensagem. Nada aqui muda executor/fila/permissões.
-    const linhaTipo = info.floodKind === "shopping"
-        ? `🛍️ TIPO: loja (shopStorefrontMessage · viewOnce ${info.floodContent?.viewOnce === true ? "SIM" : "não"})\n`
-        : ``
     const texto = `🌊 FLOOD — MODO DE ENVIO\n` +
-                  `${linhaTipo}` +
                   `Qtd: ${qtd} msgs | Atual: ${atual}\n\n` +
                   `Escolha a velocidade:\n` +
                   `  1 · Rápido — ${FLOOD_MODOS.rapido.intervalo}ms / lote ${FLOOD_MODOS.rapido.lote} (arriscado)\n` +
@@ -228,12 +222,7 @@ export async function enviarMenuFloodModos(jid, ownerKey, info = {}) {
             groupJid: info.groupJid,
             multiGroups: info.multiGroups,
             floodMessage: info.floodMessage,
-            floodQtd: qtd,
-            // [SHOPPING] o TIPO de conteúdo atravessa o passo de modo: é o mesmo
-            // estado do mesmo wizard, não uma fila/executor paralelo.
-            floodKind: info.floodKind || "text",
-            floodContent: info.floodContent || null,
-            floodWarnings: info.floodWarnings || []
+            floodQtd: qtd
         })
     }
     await safeSendMessage(jid, { text: texto })
