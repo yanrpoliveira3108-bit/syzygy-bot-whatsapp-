@@ -477,7 +477,7 @@ intencional deste bundle (ver 2.2), não bug.\n\n`,
     blocos.map((b, i) => `${i + 1}. ${b.match(/#### `([^`]+)`/)[1]}`).join("\n"),
     "\n\n",
     blocos.join("\n"),
-    "\n---\n\n# FIM DO BUNDLE\n\nDepois de montar o projeto: rode as três suítes de teste\ndo bundle (\`features/flood/tests*.js\`, \`tests-menu.js\`, \`tests-payment.js\`) e o\nchecklist de smoke da Parte A. Não declare sucesso por render de card de loja,\npagamento ou viewOnce sem prova em aparelho real.\n",
+    "\n---\n\n# FIM DO BUNDLE\n\nDepois de montar o projeto: rode as quatro suítes de teste\ndo bundle (\`features/flood/tests.js\`, \`tests-menu.js\`, \`tests-infra.js\`,\n\`features/viewOnce/tests.js\`) e o\nchecklist de smoke da Parte A. Não declare sucesso por render de card de loja,\npagamento ou viewOnce sem prova em aparelho real.\n",
 ].join("")
 
 if (process.argv.includes("--verify")) {

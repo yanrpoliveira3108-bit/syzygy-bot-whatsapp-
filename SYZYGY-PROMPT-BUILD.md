@@ -18788,7 +18788,8 @@ legacy-peer-deps=true
 
 # FIM DO BUNDLE
 
-Depois de montar o projeto: rode as três suítes de teste
-do bundle (`features/flood/tests*.js`, `tests-menu.js`, `tests-payment.js`) e o
+Depois de montar o projeto: rode as quatro suítes de teste
+do bundle (`features/flood/tests.js`, `tests-menu.js`, `tests-infra.js`,
+`features/viewOnce/tests.js`) e o
 checklist de smoke da Parte A. Não declare sucesso por render de card de loja,
 pagamento ou viewOnce sem prova em aparelho real.
