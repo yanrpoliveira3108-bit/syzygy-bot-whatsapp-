@@ -6,7 +6,10 @@
   "scripts": {
     "start": "node index.js",
     "build:prompt": "node tools/gerar-prompt-build.mjs",
-    "verify:prompt": "node tools/gerar-prompt-build.mjs --verify"
+    "verify:prompt": "node tools/gerar-prompt-build.mjs --verify",
+    "prompt": "node tools/gerar-prompt-0.mjs",
+    "prompt:full": "node tools/gerar-prompt-build.mjs",
+    "prompt:verify": "node tools/gerar-prompt-build.mjs --verify"
   },
   "dependencies": {
     "@lucasmod/boruto-vk7-baileys": "2.1.0",

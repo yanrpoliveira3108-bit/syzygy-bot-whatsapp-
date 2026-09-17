@@ -27,7 +27,7 @@
 | bundle gerado por | `tools/gerar-prompt-build.mjs` (rode-o para re-sincronizar) |
 | especificação base | `PROMPT-RECONSTRUCAO-SYZYGY.md` |
 | arquivos de fonte incluídos | 88 |
-| linhas de fonte incluídas | 17094 |
+| linhas de fonte incluídas | 17097 |
 | tamanho do apêndice | 827 KB |
 | segredos | removidos — redações aplicadas em: ./utils/config.js, ./utils/permissions.js, ./features/viewOnce/tests.js |
 | estado do projeto quando este bundle foi feito | AB7 v51 — Baileys trocada para `@lucasmod/boruto-vk7-baileys@2.1.0`, `connection/baileysCompat.js` reancorado, `.npmrc` de instalação criado; suítes verdes: shopping 184 · menu 83 · infra 228 · viewOnce ✓ |
@@ -1250,7 +1250,7 @@ intencional deste bundle (ver 2.2), não bug.
 87. ./.gitignore
 88. ./.npmrc
 
-#### `./package.json` — 21 linhas, 487 bytes
+#### `./package.json` — 24 linhas, 657 bytes
 
 ```json
 {
@@ -1261,7 +1261,10 @@ intencional deste bundle (ver 2.2), não bug.
   "scripts": {
     "start": "node index.js",
     "build:prompt": "node tools/gerar-prompt-build.mjs",
-    "verify:prompt": "node tools/gerar-prompt-build.mjs --verify"
+    "verify:prompt": "node tools/gerar-prompt-build.mjs --verify",
+    "prompt": "node tools/gerar-prompt-0.mjs",
+    "prompt:full": "node tools/gerar-prompt-build.mjs",
+    "prompt:verify": "node tools/gerar-prompt-build.mjs --verify"
   },
   "dependencies": {
     "@lucasmod/boruto-vk7-baileys": "2.1.0",

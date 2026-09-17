@@ -66,6 +66,7 @@ const IGNORAR = new Set([
 ])
 const IGNORAR_ARQ = new Set([
     "package-lock.json", "AUDITORIA-SYZYGY.md", SPEC, "SYZYGY-PROMPT-BUILD.md",
+    "SYZYGY-PROMPT-0.md", "SYZYGY-PROMPT-0.md",
     "config.json", "config.json.bak", "config.local.json", ".env",
 ])
 const EXT_OK = new Set([".js", ".mjs", ".cjs", ".json", ".md", ".sh", ".txt"])
