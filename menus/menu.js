@@ -98,7 +98,7 @@ export const COMANDOS = [
 // Função que divide automaticamente em sections de 25 (limite WhatsApp)
 // [v50] NÚMEROS REAIS de navegação de cada comando — descobertos do próprio
 // sistema (nada inventado): commandMap numérico (painel 1-8), CONFIG_OPCOES
-// (config 6>1-11 · dono 5>12-35) e mapa do Status (7>1-11). Comando sem
+// (config 6>1-11 · dono 5>12-46) e mapa do Status (7>1-11). Comando sem
 // número no sistema não ganha número.
 const NUM_PAINEL = {}
 for (const [k, v] of Object.entries(TEXT_TO_ACTION)) {

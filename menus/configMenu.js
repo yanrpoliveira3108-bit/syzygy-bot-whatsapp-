@@ -1,7 +1,7 @@
 // menus/configMenu.js
 // [v46] Config REORGANIZADA em duas seções separadas:
 //   👤 CONFIGURAÇÕES (ADMs do bot)  → números 1-11
-//   👑 COMANDOS DO DONO (restrito)  → números 12-35
+//   👑 COMANDOS DO DONO (restrito)  → números 12-46  (36-45 = 🛡️ FLOOD · CONTROLES)
 // O parser rápido (5/NN) usa CONFIG_OPCOES dinamicamente — renumerar aqui
 // atualiza os comandos rápidos automaticamente.
 
@@ -71,7 +71,7 @@ async function enviarConfigInterativo(jid, ownerKey, modo = "adm") {
         ? `👑 𝗖𝗢𝗠𝗔𝗡𝗗𝗢𝗦 𝗗𝗢 𝗗𝗢𝗡𝗢
 🔒 acesso restrito ao dono
 
-_Toque em uma opção (12-35) ou digite o número_`
+_Toque em uma opção (12-46) ou digite o número_`
         : `⚙️ 𝗖𝗢𝗡𝗙𝗜𝗚𝗨𝗥𝗔𝗖̧𝗢𝗘𝗦
 👤 ADMs do bot podem usar
 
@@ -95,7 +95,7 @@ export const CONFIG_OPCOES = {
     "9": "cfg_list_owners",
     "10": "cfg_fantasma",
     "11": "abrir_painel",
-    // ── 👑 DONO (12-35) ────────────────────────────────────
+    // ── 👑 DONO (12-46) ────────────────────────────────────
     "12": "cfg_criar_preset",
     "13": "cfg_apagar_preset",
     "14": "cfg_menuImage",
@@ -247,7 +247,7 @@ export async function enviarSubmenuConfig(jid, ownerKey, modo = "adm") {
     await safeSendMessage(jid, { text: t }, 0)
 }
 
-// [v45] Painel do dono = seção 👑 da config (números 12-35)
+// [v45] Painel do dono = seção 👑 da config (números 12-46 desde os controles do flood)
 export async function enviarPainelDono(jid, ownerKey) {
     return enviarSubmenuConfig(jid, ownerKey, "dono")
 }

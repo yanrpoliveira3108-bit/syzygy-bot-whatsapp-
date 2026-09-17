@@ -133,7 +133,7 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         }
         if (!st.avisouConfig) {
             setState(ownerKey, { action: "config_menu", avisouConfig: true })
-            await sock.sendMessage(chatJid, { text: "⚠️ Opção inválida. Digite 1-11 (config), 12-35 (dono) ou 0 = voltar (cancelar = sair)." })
+            await sock.sendMessage(chatJid, { text: "⚠️ Opção inválida. Digite 1-11 (config), 12-46 (dono — 36-45 são os controles do flood) ou 0 = voltar (cancelar = sair)." })
         }
         return true
     }
