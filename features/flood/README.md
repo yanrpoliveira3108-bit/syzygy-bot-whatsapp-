@@ -5,7 +5,7 @@
 ou executor próprios — quem envia continua sendo `executarFlood()` /
 `executarFloodLote()` em `services/groupService.js`.
 
-Paquete de referência: **@innovatorssoft/baileys 7.4.7** (verificado com
+Paquete de referência: **@lucasmod/boruto-vk7-baileys 7.4.7** (verificado com
 `npm pack` em 2026-09-16 — nada aqui é inferido de README de terceiros).
 
 ---
@@ -35,7 +35,7 @@ sock.sendMessage(jid, {
 })
 ```
 
-O que o fork faz com isso, em `lib/Utils/messages.js` (ramo `shop`, ~1374):
+O que o fork faz com isso, em `lib/Utils/messages.js` (ramo `shop`, :1020):
 
 ```js
 else if ('shop' in message && !!message.shop) {
@@ -134,7 +134,7 @@ gera send com surface 4: gera surface 3 com aviso.
 
 | caminho (atalho `sendMessage`) | `shopStorefrontMessage` | `nativeFlowMessage` | bytes do proto |
 | --- | --- | --- | --- |
-| `{ text, shop:{surface,id} }` → ramo `shop` puro (~1374) | `{surface,id}` — **`messageVersion: null`** | não | 138 |
+| `{ text, shop:{surface,id} }` → ramo `shop` puro (:1020) | `{surface,id}` — **`messageVersion: null`** | não | 138 |
 | `{ text, nativeFlow:[…], shop:{surface,id} }` → ramo `interactiveButtons/nativeFlow` + `message.shop` (~1306) | `{surface,id,messageVersion:1}` | **sim** | 195 |
 
 Medidos com `generateWAMessageContent` + `proto.Message.encode` do pacote real
@@ -256,11 +256,11 @@ conferir (a) se a notificação abre, (b) se aparece texto em vez de card, (c) o
 node features/flood/tests.js
 ```
 
-* **172** asserções com `@innovatorssoft/baileys` instalado (cobre os dois modos
+* **172** asserções com `@lucasmod/boruto-vk7-baileys` instalado (cobre os dois modos
   de entrega e compara o proto gerado com `messageVersion` nulo/1); sem o pacote,
   o mesmo suite roda os blocos de contrato como **SKIP declarado** no stdout —
   nunca "passado" inventado.
-* quando `@innovatorssoft/baileys` está instalado, o suite **também**: compara as
+* quando `@lucasmod/boruto-vk7-baileys` está instalado, o suite **também**: compara as
   chaves que enviamos com as que o `lib/Utils/messages.js` do fork realmente lê,
   confere o enum em `WAProto/E2E/E2E.proto` (e que `= 4` não existe) e gera o
   proto de verdade com `generateWAMessageContent` para provar o wire
@@ -323,7 +323,7 @@ feature criada nesta sessão; para a branch de produção, teste primeiro o patc
 
 `features/flood/commerce.js` (leitura pura; quem passa o socket é o chamador) usa SOMENTE as APIs
 que este fork tem (`sock.getCatalog`, `sock.getCollections` — ver
-`node_modules/@innovatorssoft/baileys/lib/Socket/business.js`) e responde à pergunta *"o id que
+`node_modules/@lucasmod/boruto-vk7-baileys/lib/Socket/business.js`) e responde à pergunta *"o id que
 está no preset é o id do meu catálogo?"*:
 
 ```js

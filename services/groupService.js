@@ -110,7 +110,7 @@ export async function alterarBioGrupo(jid, bio) {
 
 // [v58] TROCA DE FOTO COM RETRY — a foto é o ÚNICO passo de roubar/nuke que
 // depende da CONEXÃO DE MÍDIA (upload HTTP). Bug conhecido do fork
-// (@innovatorssoft/baileys 7.4.7): se UMA busca de media_conn falhar, a
+// (@lucasmod/boruto-vk7-baileys 2.1.0, e já valia no innovatorssoft 7.4.7): se UMA busca de media_conn falhar, a
 // promise rejeitada fica NO CACHE e todos os uploads seguintes falham até
 // reconectar ("depois de um tempo a foto não muda mais" — nome/bio/fechar
 // continuam porque vão pelo canal de sinal). Aqui: retry com backoff +

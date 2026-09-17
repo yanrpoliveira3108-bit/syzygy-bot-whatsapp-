@@ -8,7 +8,7 @@
 // desenhar o card (mesmo com payload limpo).
 //
 // Sem inventar API: usamos SOMENTE o que este fork expõe de verdade
-// (node_modules/@innovatorssoft/baileys/lib/Socket/business.js):
+// (node_modules/@lucasmod/boruto-vk7-baileys/baileys/lib/Socket/business.js):
 //   sock.getCatalog({ jid?, limit?, cursor? }) → { products:[{productId,name,…}], nextPageCursor? }
 //   sock.getCollections(jid?, limit?)          → { collections:[{id,name,type,productsCount,…}] }
 // Nada aqui abre socket, lê sessão ou envia mensagem: quem chama passa o `sock`.

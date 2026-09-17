@@ -2,7 +2,7 @@
 // ADAPTER shopping — camada PURA (sem socket, sem fs, sem fila, sem timer).
 // Responsabilidade única: transformar o que o dono digitou/salvou no flood em
 // UM objeto de conteúdo que o atalho `sock.sendMessage(jid, content)` do fork
-// @innovatorssoft/baileys@7.4.7 sabe converter em
+// @lucasmod/boruto-vk7-baileys@2.1.0 sabe converter em
 //   interactiveMessage.shopStorefrontMessage { surface, id }
 // e nada além disso.
 //
@@ -360,8 +360,8 @@ export function describeShoppingPayload(content, meta) {
     if (content.footer) l.push(`• rodapé: ${content.footer}`)
     l.push(`• surface: ${content.shop.surface} (${SURFACE_NAMES[content.shop.surface] || "?"})`)
     l.push(`• id: ${content.shop.id}`)
-    l.push(`• viewOnce: ${content.viewOnce === true ? "SIM → embrulha em viewOnceMessage (risco alto de 'mensagem indisponível')" : "não (sem wrap de visualização única)"}`)
-    l.push(`• messageVersion: ${m.delivery === SHOPPING_DELIVERY.FLOW ? "1 (via ramo nativeFlow+shop do fork)" : "não enviado (ramo shop puro não expõe o campo)"}`)
+    l.push(`• viewOnce: ${content.viewOnce === true ? "SIM → o fork embrulha o card (viewOnceMessage no innovatorssoft, viewOnceMessageV2 no @lucasmod 2.1.0) = risco alto de 'mensagem indisponível'" : "não (sem wrap de visualização única)"}`)
+    l.push(`• messageVersion: ${m.delivery === SHOPPING_DELIVERY.FLOW ? "só sai 1 se o fork tiver o ramo combinado nativeFlow+shop — no @lucasmod/boruto-vk7-baileys 2.1.0 ele NÃO existe (shop :1020 e interactiveButtons :973 são else if excludentes), então fica no default do proto e o wire é idêntico ao do modo puro" : "não enviado (ramo shop puro não expõe o campo)"}`)
     l.push(`• entrega: ${m.delivery === SHOPPING_DELIVERY.FLOW ? "flow (nativeFlow + shop)" : "puro (só shop)"}`)
     l.push(`• payment: não (é outro proto, outro caminho)`)
     return l.join("\n")

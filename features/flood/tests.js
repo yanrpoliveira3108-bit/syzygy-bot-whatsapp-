@@ -305,21 +305,40 @@ export async function runFloodShoppingTests() {
 
     // ── 10) bloqueio contra a fonte da verdade (se o fork estiver instalado) ─
     const here = path.dirname(fileURLToPath(import.meta.url))
-    const candidates = [
-        path.resolve(here, "../../node_modules/@innovatorssoft/baileys/lib/Utils/messages.js"),
-        path.resolve(here, "../../../node_modules/@innovatorssoft/baileys/lib/Utils/messages.js"),
-        path.resolve(process.cwd(), "node_modules/@innovatorssoft/baileys/lib/Utils/messages.js")
+    // [v51] @lucasmod/boruto-vk7-baileys publica o MONOREPO: a lib fica em
+    // `node_modules/@lucasmod/boruto-vk7-baileys/baileys/lib/`. Os candidatos
+    // abaixo cobrem o fork novo e o antigo (para o suite continuar útil em
+    // bisbilhotada histórica), e o `forkSrc` é reaproveitado na seção 11.
+    const CANDIDATOS_MESSAGES = [
+        "@lucasmod/boruto-vk7-baileys/baileys/lib/Utils/messages.js",
+        "@lucasmod/boruto-vk7-baileys/lib/Utils/messages.js",
+        "@innovatorssoft/baileys/lib/Utils/messages.js"
     ]
-    const forkFile = candidates.find(p => fs.existsSync(p))
+    const candidatos = CANDIDATOS_MESSAGES.flatMap(espec => [
+        path.resolve(here, "../../node_modules", espec),
+        path.resolve(here, "../../../node_modules", espec),
+        path.resolve(process.cwd(), "node_modules", espec)
+    ])
+    const forkFile = candidatos.find(p => fs.existsSync(p))
+    let forkSrc = null
+    // [v51] forks diferentes embrulham viewOnce em campos diferentes
+    // (innovatorssoft 7.4.7 → viewOnceMessage; @lucasmod 2.1.0 → viewOnceMessageV2).
+    // O que importa para o SYZYGY é só UMA coisa: que existe um embrulho, e que por
+    // isso o card de loja NUNCA deve mandar viewOnce. O nome do campo é lido do fork.
+    let CAMPO_VIEWONCE = "viewOnceMessage"
     if (!forkFile) {
-        skip("fork @innovatorssoft/baileys não instalado — bloqueio de contrato contra lib/Utils/messages.js não executado")
+        skip("fork de Baileys não instalado — bloqueio de contrato contra lib/Utils/messages.js não executado")
     } else {
-        const src = fs.readFileSync(forkFile, "utf8")
+        const src = forkSrc = fs.readFileSync(forkFile, "utf8")
         assert(/else if \('shop' in message && !!message\.shop\)/.test(src), "fork tem o ramo 'shop' puro que o adapter usa")
         assert(/shopStorefrontMessage:\s*\{/.test(src), "fork monta shopStorefrontMessage (superfície real do tipo)")
-        assert(/else if \('viewOnce' in message && !!message\.viewOnce\)/.test(src), "fork embrulha em viewOnceMessage quando viewOnce é true (por isso o default é omitir)")
-        const protoFile = path.resolve(path.dirname(forkFile), "../../WAProto/E2E/E2E.proto")
-        if (fs.existsSync(protoFile)) {
+        assert(/\('viewOnce' in message && !!message\.viewOnce\)/.test(src), "fork embrulha em viewOnce quando viewOnce é true (por isso o default é omitir)")
+        CAMPO_VIEWONCE = /viewOnceMessageV2\s*:\s*\{\s*message:\s*m\s*\}/.test(src) ? "viewOnceMessageV2" : "viewOnceMessage"
+        const protoFile = [
+            path.resolve(path.dirname(forkFile), "../../WAProto/E2E/E2E.proto"),
+            path.resolve(path.dirname(forkFile), "../../../WAProto/E2E/E2E.proto")
+        ].find(p => fs.existsSync(p))
+        if (protoFile && fs.existsSync(protoFile)) {
             const proto = fs.readFileSync(protoFile, "utf8")
             const block = proto.slice(proto.indexOf("message ShopMessage"), proto.indexOf("message ShopMessage") + 400)
             assert(/FB = 1/.test(block) && /IG = 2/.test(block) && /WA = 3/.test(block), "proto do fork define Surface = 0..3")
@@ -331,9 +350,11 @@ export async function runFloodShoppingTests() {
 
     // ── 11) integração REAL: nosso payload → proto gerado pelo fork ──────────
     let Baileys = null
-    try { Baileys = await import("@innovatorssoft/baileys") } catch { Baileys = null }
+    // [v51] importa pelo shim: ele é o único ponto que conhece o specifier do
+    // pacote (e resolve o default-namespace → função para nós).
+    try { Baileys = await import("../../connection/baileysCompat.js") } catch { Baileys = null }
     if (!Baileys || typeof Baileys.generateWAMessageContent !== "function") {
-        skip("@innovatorssoft/baileys indisponível — proto real não exercitado (rode com as dependências instaladas)")
+        skip("Baileys indisponível — proto real não exercitado (rode `npm i`; ver .npmrc do projeto)")
     } else {
         const { generateWAMessageContent } = Baileys
         const options = { logger: { warn() {}, debug() {} } }
@@ -346,10 +367,29 @@ export async function runFloodShoppingTests() {
         assert(wire.viewOnceMessage == null && wire.viewOnceMessageV2 == null, "wire sem wrap de visualização única (fim do 'mensagem indisponível')")
         assertEq(wire.interactiveMessage.shopStorefrontMessage.surface, 1, "surface chega ao proto como número do enum (1)")
         assertEq(wire.interactiveMessage.shopStorefrontMessage.id, SHOPPING_PRESET_TEST.shop.id, "shop.id chega intacto")
-        assert(wire.interactiveMessage.shopStorefrontMessage.messageVersion == null, "messageVersion fica nulo no modo PURO (o atalho não expõe o campo — não inventamos)")
+        assert(wire.interactiveMessage.shopStorefrontMessage.messageVersion == null || wire.interactiveMessage.shopStorefrontMessage.messageVersion === 0, "messageVersion fica desocupado no modo PURO (nulo, ou 0 = default do proto3 em fork que não preenche o campo — não inventamos)")
         const wireFlow = await generateWAMessageContent(flow.content, options)
-        assertEq(wireFlow.interactiveMessage.shopStorefrontMessage.messageVersion, 1, "modo FLOW: o próprio fork põe shopStorefrontMessage.messageVersion = 1")
-        assert(!!wireFlow.interactiveMessage.nativeFlowMessage && !!wireFlow.interactiveMessage.shopStorefrontMessage, "flow = nativeFlowMessage + shopStorefrontMessage no mesmo interactiveMessage")
+        // Nem todo fork tem o ramo COMBINADO `interactiveButtons`+`shop` que põe
+        // messageVersion=1: o @lucasmod/boruto-vk7-baileys 2.1.0 tem `shop`
+        // (messages.js:1020) e `interactiveButtons` (:973) como `else if`
+        // EXCLUDENTES, e nenhum dos dois toca em messageVersion. Então o modo
+        // flow é testado conforme o fork que está instalado — sem fingir nada.
+        const TEM_RAMO_COMBINADO = (() => {
+            if (!forkSrc) return false
+            const ini = forkSrc.indexOf("'interactiveButtons' in message")
+            if (ini < 0) return false
+            const ateShop = forkSrc.indexOf("else if ('shop' in message", ini)
+            const ramo = forkSrc.slice(ini, ateShop < 0 ? ini + 2000 : ateShop)
+            return /shopStorefrontMessage/.test(ramo) && /messageVersion/.test(ramo)
+        })()
+        if (TEM_RAMO_COMBINADO) {
+            assertEq(wireFlow.interactiveMessage.shopStorefrontMessage.messageVersion, 1, "modo FLOW: o próprio fork põe shopStorefrontMessage.messageVersion = 1")
+            assert(!!wireFlow.interactiveMessage.nativeFlowMessage && !!wireFlow.interactiveMessage.shopStorefrontMessage, "flow = nativeFlowMessage + shopStorefrontMessage no mesmo interactiveMessage")
+        } else {
+            assert(!!wireFlow.interactiveMessage.shopStorefrontMessage, "fork sem ramo combinado: flow ainda entrega o card pelo atalho 'shop' (não silenciamos o card)")
+            assert(!wireFlow.interactiveMessage.nativeFlowMessage, "fork sem ramo combinado: 'nativeFlow' do payload é ignorado pelo ramo 'shop' exclusivo")
+            assert(wireFlow.interactiveMessage.shopStorefrontMessage.messageVersion == null || wireFlow.interactiveMessage.shopStorefrontMessage.messageVersion === 0, "fork sem ramo combinado: messageVersion indisponível (0) — o modo flow degenera no 'puro'; reportado, não escondido")
+        }
         assert(!("viewOnceMessage" in wireFlow) || wireFlow.viewOnceMessage == null, "flow também sai sem wrap de visualização única")
         assertEq(wireFlow.interactiveMessage.shopStorefrontMessage.surface, 1, "flow mantém surface no wire")
         assertEq(wire.interactiveMessage.body.text, zero.content.text, "corpo do card = body.text do interactiveMessage")
@@ -359,7 +399,7 @@ export async function runFloodShoppingTests() {
 
         // prova do motivo do default: ligar viewOnce embrulha o card
         const wireVo = await generateWAMessageContent({ ...zero.content, viewOnce: true }, options)
-        assertEq(Object.keys(wireVo), ["viewOnceMessage"], "viewOnce:true → fork embrulha em viewOnceMessage (por isso o padrão é omitir)")
+        assertEq(Object.keys(wireVo), [CAMPO_VIEWONCE], `viewOnce:true → fork embrulha o card em ${CAMPO_VIEWONCE} (por isso o padrão é omitir)`)
 
         // surface 4: o proto aceita o número no wire (é por isso que o app reclama)
         const wireQuatro = await generateWAMessageContent({ text: "t", shop: { surface: 4, id: "https://ex.com" } }, options)

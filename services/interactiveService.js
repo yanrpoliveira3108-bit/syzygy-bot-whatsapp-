@@ -189,7 +189,7 @@ export async function enviarMensagemInterativa(from, texto, botoes) {
         // (lista real do "Mostrar lista", v49-v52). Diferenças que a v53
         // introduziu e QUEBRAVAM o render dos botões, eliminadas:
         //   1. messageParamsJson: ""  → REMOVIDO. No proto do fork
-        //      (@innovatorssoft/baileys 7.4.7) o campo é OPCIONAL
+        //      (@lucasmod/boruto-vk7-baileys 2.1.0) o campo é OPCIONAL
         //      (string|null); o list.js (que renderiza) não o envia.
         //      String vazia invalida o parse do flow no cliente.
         //   2. contextInfo.mentionedJid → REMOVIDO (list.js não envia;

@@ -1,6 +1,6 @@
 // features/flood/payment.js
 // [INFRA FLOOD · recuperada da arena 01a0aaae]
-// Adaptador da Payment Message REAL do pacote instalado (@innovatorssoft/baileys
+// Adaptador da Payment Message REAL do pacote instalado (@lucasmod/boruto-vk7-baileys
 // 7.4.7): sock.sendMessage(jid, { payment: PaymentInfo }) → requestPaymentMessage
 // { amount1000, currencyCodeIso4217, noteMessage, requestFrom }.
 //
@@ -23,7 +23,7 @@ const ISO4217 = new Set([
 
 export function getPaymentApiInfo() {
     return {
-        library: "@innovatorssoft/baileys@7.4.7",
+        library: "@lucasmod/boruto-vk7-baileys@2.1.0",
         available: true,
         sendShape: "sock.sendMessage(jid, { payment: { note, currency, amount, offset, from, expiry } })",
         proto: "requestPaymentMessage",

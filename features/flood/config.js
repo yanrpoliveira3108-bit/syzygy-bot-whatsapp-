@@ -6,7 +6,7 @@
 // executarFlood()/executarFloodLote() em services/groupService.js — shopping é
 // apenas um CONTEÚDO que o laço existente envia via defaultSend (engine.js).
 //
-// FONTE DA VERDADE: @innovatorssoft/baileys@7.4.7 (verificado com npm pack,
+// FONTE DA VERDADE: @lucasmod/boruto-vk7-baileys@2.1.0 (verificado com npm pack,
 // 2026-09-16), arquivos:
 //   • lib/Utils/messages.js  → generateWAMessageContent
 //   • WAProto/E2E/E2E.proto  → Message.InteractiveMessage.ShopMessage
@@ -146,10 +146,16 @@ export function listShoppingPresetsTexto() {
 // a partir do atalho { shop } — nunca proto cru, nunca payment.
 //
 //   puro → ramo `else if ('shop' in message && !!message.shop)` (messages.js
-//          ~1374). Gera o card SEM `messageVersion`.
-//   flow → ramo `interactiveButtons/nativeFlow + message.shop` (~1306). Esse ramo
-//          é o ÚNICO do fork que seta `shopStorefrontMessage.messageVersion = 1`,
-//          e exige um nativeFlowMessage válido junto (é o envelope que os menus
+//          messages.js:1020). Gera o card SEM `messageVersion`.
+//   flow → ramo `interactiveButtons/nativeFlow + message.shop`. No fork ANTIGO
+//          (innovatorssoft 7.4.7, ~1306) esse ramo combinado era o ÚNICO que
+//          setava `shopStorefrontMessage.messageVersion = 1`. No fork DESTE build
+//          (@lucasmod 2.1.0) NÃO há ramo combinado: `interactiveButtons` (:973)
+//          monta só nativeFlowMessage e `shop` (:1020) é `else if` exclusivo, e
+//          nenhum dos dois toca em messageVersion ⇒ flow produz o MESMO wire do que
+//          puro (o nativeFlow do payload é ignorado) e o card continua íntegro.
+//          O modo flow ficou como opção histórica/diagnóstico, não como requisito.
+//          Exige um nativeFlowMessage válido junto (é o envelope que os menus
 //          deste repo já usam e que, segundo os comentários de
 //          services/interactiveService.js, é o que renderiza no app real).
 //

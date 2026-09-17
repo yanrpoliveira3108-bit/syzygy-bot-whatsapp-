@@ -37,7 +37,7 @@ export const A2UI_BUTTON_NAME = "im_a2ui"
 
 /**
  * Envia uma mensagem BLOKS/A2UI.
- * @param sock       socket Baileys (fork @innovatorssoft/baileys)
+ * @param sock       socket Baileys (fork @lucasmod/boruto-vk7-baileys)
  * @param jid        destinatário
  * @param payload    { bloksWidget: { type: "im_a2ui", a2ui: { version, catalogId, layouts } } }
  *                   (contrato preservado do createServerInspectorData)
@@ -88,7 +88,7 @@ export async function sendBloksMessage(sock, jid, payload, opts = {}) {
     dbg("BLOKS", "interactiveMessage montado (viewOnce + messageContextInfo)")
 
     // Serialização pelo gerador oficial do fork (proto real).
-    // [DIFERENÇA REAL DO FORK] o generateWAMessageFromContent do innovatorssoft
+    // [DIFERENÇA REAL DO FORK] o generateWAMessageFromContent do fork (@lucasmod)
     // não gera key.id (retorna key:{} — no whiskeysockets gerava "3EB0...").
     // Geramos aqui com generateMessageID do próprio fork.
     const messageId = generateMessageID(sock.user?.id)

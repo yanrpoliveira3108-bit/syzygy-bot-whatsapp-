@@ -1,5 +1,19 @@
 # PROMPT — Reconstruir o bot SYZYGY do zero
 
+> **⚠️ Nota (2026-09-17, v51).** A dependência de WhatsApp deste projeto mudou:
+> o `@innovatorssoft/baileys@7.4.7` citado abaixo foi substituído por
+> **`@lucasmod/boruto-vk7-baileys@2.1.0`** (repo `Otakump4/boruto_vk7-baileys`).
+> Os contratos de payload (card de loja, pagamento, viewOnce) são os mesmos e os
+> números de linha do `Utils/messages.js` mudaram (shop `:1020`, viewOnce `:1197`,
+> payment `:725-753`/`:1247-1249`); a instalação tem 4 armadilhas de empacotamento
+> (`.npmrc` com `ignore-scripts` + alias do libsignal + import por caminho
+> explícito) e há UMA divergência real: o ramo combinado `nativeFlow+shop` que
+> punha `shopStorefrontMessage.messageVersion = 1` não existe no fork novo, então
+> o modo de entrega `flow` degenera no `puro`. Os detalhes, a receita de `npm i`
+> testada e o **código-fonte completo embutido** estão em
+> **`SYZYGY-PROMPT-BUILD.md`** (`tools/gerar-prompt-build.mjs` o regenera a partir
+> do fonte real) — para reconstruir o bot hoje, use aquele arquivo.
+>
 > **Como usar este arquivo:** cole ele inteiro em outra IA (Claude/GPT/Gemini) e diga
 > apenas: *"implemente a Fase 0 e 1 e pare para eu testar"*. Este documento é a
 > especificação **completa** do SYZYGY: arquitetura, contratos de função, payloads do

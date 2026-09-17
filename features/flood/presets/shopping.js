@@ -3,7 +3,9 @@
 // flood, não faz I/O, não conhece socket — assim config.js pode importá-lo sem
 // ciclo e os testes validam cada preset com o adapter puro.
 //
-// Contrato (fonte: README "Shop Message" do fork + lib/Utils/messages.js ~1374):
+// Contrato (fonte: README "Shop Message" do fork + lib/Utils/messages.js:1020 —
+//   no fork deste build, @lucasmod/boruto-vk7-baileys@2.1.0; no innovatorssoft
+//   7.4.7 o mesmo ramo estava em ~1374):
 //   sock.sendMessage(jid, { text, title, subtitle, footer, shop: { surface, id }, viewOnce? })
 //     → interactiveMessage.shopStorefrontMessage { surface, id }
 //

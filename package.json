@@ -4,11 +4,17 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "build:prompt": "node tools/gerar-prompt-build.mjs",
+    "verify:prompt": "node tools/gerar-prompt-build.mjs --verify"
   },
   "dependencies": {
-    "@innovatorssoft/baileys": "7.4.7",
+    "@lucasmod/boruto-vk7-baileys": "2.1.0",
+    "@boruto_vk7/libsignal-node": "npm:@itsukichan/libsignal-node@1.0.1",
     "jimp": "^1.6.0",
     "pino": "^10.3.1"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
