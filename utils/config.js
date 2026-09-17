@@ -62,7 +62,18 @@ export const CONFIG = {
     usuariosAutorizados: [],
     gruposAutorizados: [],
     lidsAutorizados: [],
-    donosExtras: []
+    donosExtras: [],
+    // [FLOOD · presets] chaves da infraestrutura de flood (recuperadas da arena
+    // 01a0aaae). Defaults conservadores: dry-run LIGADO (nada sai até o operador
+    // desligar) e kill switch desligado. floodAllowlist é vazia de propósito: sem
+    // destino explicitamente autorizado, preset nenhum dispara.
+    floodKillSwitch: false,
+    floodDryRun: true,
+    floodTestMode: true,
+    floodAllowlist: [],
+    floodMaxRetries: 1,
+    floodTimeoutMs: 15000,
+    floodCustomPresets: []
 }
 
 export function carregarConfig() {
@@ -88,6 +99,13 @@ export function carregarConfig() {
             if (!Array.isArray(CONFIG.gruposAutorizados)) CONFIG.gruposAutorizados = []
             if (!Array.isArray(CONFIG.lidsAutorizados)) CONFIG.lidsAutorizados = []
             if (!Array.isArray(CONFIG.donosExtras)) CONFIG.donosExtras = []
+            if (typeof CONFIG.floodKillSwitch !== "boolean") CONFIG.floodKillSwitch = false
+            if (typeof CONFIG.floodDryRun !== "boolean") CONFIG.floodDryRun = true
+            if (typeof CONFIG.floodTestMode !== "boolean") CONFIG.floodTestMode = true
+            if (!Array.isArray(CONFIG.floodAllowlist)) CONFIG.floodAllowlist = []
+            if (!CONFIG.floodMaxRetries) CONFIG.floodMaxRetries = 1
+            if (!CONFIG.floodTimeoutMs) CONFIG.floodTimeoutMs = 15000
+            if (!Array.isArray(CONFIG.floodCustomPresets)) CONFIG.floodCustomPresets = []
         }
     } catch {}
     if (CONFIG.ownerOverride) setConfigOwner(CONFIG.ownerOverride)
