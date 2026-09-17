@@ -22,3 +22,6 @@ temp/
 *.sqlite3
 
 .DS_Store
+
+# backups locais criados por ./update.sh (nunca versionar)
+.syzygy-backup/
