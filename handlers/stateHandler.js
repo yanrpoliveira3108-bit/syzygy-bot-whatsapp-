@@ -1079,6 +1079,92 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         clearState(ownerKey); return true
     }
 
+    // ══ [FLOOD v2] entradas dos controles 36-45 do painel do dono ═══════════
+    // Velocidade: usa resolveFloodSpeed() da feature (mesma fonte do overlay dos
+    // presets) e grava no config.json no FORMATO que o flood clássico já entende —
+    // modo "custom" vira intervalo explícito com o nome de modo anterior, porque
+    // FLOOD_MODOS não tem "custom" e getFloodConfig() cairia em normal.
+    if (st.action === "config_set_flood_speed" && text) {
+        const fx = await import("../features/flood/index.js")
+        const cfg = fx.resolveFloodSpeed(text.trim())
+        if (!cfg.ok) {
+            await sock.sendMessage(chatJid, { text: `⚠️ ${cfg.error} — use 1-4, o nome do modo, ou um intervalo em ms (${fx.CUSTOM_INTERVAL_MIN}–${fx.CUSTOM_INTERVAL_MAX}).\n\n${fx.formatFloodSpeedMenu()}` })
+            return true
+        }
+        const { FLOOD_MODOS } = await import("../utils/config.js")
+        if (cfg.modo === "custom" || !FLOOD_MODOS[cfg.modo]) {
+            CONFIG.floodModo = FLOOD_MODOS[CONFIG.floodModo] ? CONFIG.floodModo : "normal"
+        } else {
+            CONFIG.floodModo = cfg.modo
+        }
+        CONFIG.floodInterval = cfg.intervalo
+        CONFIG.floodLote = cfg.lote
+        CONFIG.floodJitter = !!cfg.jitter
+        salvarConfig()
+        await enviarVoltar(chatJid, `🌊 Velocidade: ${CONFIG.floodModo} · ${cfg.intervalo}ms/lote${cfg.lote}${cfg.jitter ? " + jitter" : ""} (fonte: ${cfg.from})\n\n_vale para o flood do wizard e como overlay dos presets_`)
+        clearState(ownerKey); return true
+    }
+
+    // Allowlist: aceita número do grupo autorizado (1-based) ou JID. Adicionar
+    // NUNCA envia nada; é só a porta de saída. A lista nunca é ampliada sozinha.
+    if (st.action === "config_set_flood_allowlist_add" && text) {
+        const fx = await import("../features/flood/index.js")
+        const raw = text.trim()
+        let alvo = raw
+        if (/^\d+$/.test(raw)) {
+            const grupos = CONFIG.gruposAutorizados || []
+            const i = Number(raw) - 1
+            if (i < 0 || i >= grupos.length) {
+                await sock.sendMessage(chatJid, { text: `⚠️ Não existe o grupo ${raw} na lista (${grupos.length} autorizados). Digite o número ou o JID.` })
+                return true
+            }
+            alvo = String(grupos[i])
+        }
+        const r = fx.addAllowlistJid(alvo)
+        if (!r.ok) {
+            await sock.sendMessage(chatJid, { text: `❌ ${r.error} — não virou JID. Mande o número da lista ou 5519999999999-9999@g.us\n\n${fx.formatAllowlistTexto()}` })
+            return true
+        }
+        salvarConfig()
+        const avisoGrupo = /@g\.us$/.test(r.jid) ? "" : "\n\n⚠️ não é grupo (@g.us): vale como destino individual, mas o flood de grupos continua barrando aqui."
+        await enviarVoltar(chatJid, `${r.already ? "ℹ️ já estava" : "✅ adicionado"}: ${fx.maskJid(r.jid)}\n\n${fx.formatAllowlistTexto()}${avisoGrupo}`)
+        clearState(ownerKey); return true
+    }
+    if (st.action === "config_set_flood_allowlist_remove" && text) {
+        const fx = await import("../features/flood/index.js")
+        const r = fx.removeAllowlistJid(text.trim())
+        if (!r.ok) {
+            await sock.sendMessage(chatJid, { text: `⚠️ ${r.error} — nada removido.\n\n${fx.formatAllowlistTexto()}` })
+            return true
+        }
+        salvarConfig()
+        await enviarVoltar(chatJid, `➖ removido: ${fx.maskJid(r.removed)}\n\n${fx.formatAllowlistTexto()}`)
+        clearState(ownerKey); return true
+    }
+
+    // Preview da loja: monta o payload e mostra as CHAVES do send + o ramo do
+    // wire. Não envia — é assim que se confere o card antes de um disparo real.
+    if (st.action === "config_set_flood_loja" && text) {
+        const fx = await import("../features/flood/index.js")
+        const raw = text.trim()
+        const r = fx.resolveShoppingSend(raw === "0" || raw.toLowerCase() === "default" ? "" : raw)
+        if (!r.ok) {
+            await enviarVoltar(chatJid, `❌ ${r.code}\n${r.message}\n\n_Ex.: 0 · texto livre · texto|titulo|wa · texto|titulo|wa|shop-id_`)
+            clearState(ownerKey); return true
+        }
+        const avisos = (r.warnings || []).length ? `\n⚠️ ${r.warnings.join("\n⚠️ ")}` : ""
+        await enviarVoltar(chatJid, [
+            "🛍️ PREVIEW DA LOJA — nada foi enviado",
+            `• preset: ${r.presetId} · entrega: ${r.delivery}`,
+            `• ${r.summary}`,
+            `• wire: ${r.wire}`,
+            "",
+            "_se o wire não mostrar o ramo da loja, o card NÃO existe no payload — é assim que se flagra o bug antes de culpar o cliente._",
+            `Para mandar de verdade: menu → ⚔️ Ataque & Grupos → 🌊 FLOOD → grupo → qtd → modo → conteúdo: loja:${raw || "0"} (e dry-run DESLIGADO em 37)`
+        ].join("\n") + avisos)
+        clearState(ownerKey); return true
+    }
+
     // [v24] Permissões - add/remove user
     if (st.action === "config_add_user" && text) {
         const { addAuthorizedUser } = await import("../utils/permissions.js")

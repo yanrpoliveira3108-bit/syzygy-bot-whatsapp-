@@ -17,13 +17,13 @@ import { criarBotao } from "../utils/botoes.js"
 // [v55] Rótulos das opções para a interface interativa — MESMOS títulos do
 // menu TXT (paridade 1:1 com CONFIG_OPCOES: toda opção tem row, toda row tem
 // id roteado — o E2E v55 valida isso). O modo TXT continua com a arte original.
-const CONFIG_ROTULOS_ADM = [
+export const CONFIG_ROTULOS_ADM = [
     ["1", "Ver proprietario"], ["2", "Numero conectado"], ["3", "Status da conexao"],
     ["4", "Historico"], ["5", "Relatorio completo"], ["6", "Agendamentos"],
     ["7", "Listar ADMs do bot"], ["8", "Listar grupos autz"], ["9", "Listar donos"],
     ["10", "Marcar fantasma"], ["11", "Voltar ao menu"]
 ]
-const CONFIG_ROTULOS_DONO = [
+export const CONFIG_ROTULOS_DONO = [
     ["12", "Criar preset"], ["13", "Apagar preset"], ["14", "Imagem do menu"],
     ["15", "Link de divulgacao"], ["16", "Ler mais"], ["17", "Modo do flood"],
     ["18", "Intervalo do flood"], ["19", "Lote do flood"], ["20", "Auto-limpeza"],
@@ -31,7 +31,13 @@ const CONFIG_ROTULOS_DONO = [
     ["24", "+ Add ADM do bot"], ["25", "- Remover ADM"], ["26", "+ Add grupo autz"],
     ["27", "- Remover grupo"], ["28", "+ Add dono extra"], ["29", "- Remover dono"],
     ["30", "ViewOnce ON/OFF"], ["31", "VO -> grupos"], ["32", "VO -> owner"],
-    ["33", "VO -> ADMs"], ["34", "VO salvar"], ["35", "Voltar ao menu"]
+    ["33", "VO -> ADMs"], ["34", "VO salvar"],
+    // [FLOOD v2] controles da feature features/flood/ — a AB7 tinha só o prefixo
+    // "loja:" no wizard, nada aparecia no menu. 36-45 aqui; voltar virou 46.
+    ["36", "Kill switch do flood"], ["37", "Dry-run do flood"], ["38", "Modo teste (payment/loja)"],
+    ["39", "Allowlist: listar"], ["40", "Allowlist: + grupo"], ["41", "Allowlist: - grupo"],
+    ["42", "Velocidade do flood (presets)"], ["43", "Presets: listar"], ["44", "Loja: preview do card"],
+    ["45", "Raio-X do flood"], ["46", "Voltar ao menu"]
 ]
 
 // [v55] Renderer interativo do painel de configuração — MESMA fonte
@@ -46,11 +52,20 @@ async function enviarConfigInterativo(jid, ownerKey, modo = "adm") {
         description: "",
         id: CONFIG_OPCOES[n]
     }))
+    // [FLOOD v2] com 36-46 a lista passou de 10 linhas → o single_select do
+    // WhatsApp corta section acima de 10; dividimos em páginas de 10.
+    const sections = []
+    for (let i = 0; i < rows.length; i += 10) {
+        sections.push({
+            title: `${dono ? "👑 DONO" : "👤 CONFIG"} ${rotulos[i][0]}-${rotulos[Math.min(i + 9, rotulos.length - 1)][0]}`,
+            rows: rows.slice(i, i + 10)
+        })
+    }
     const botoes = [criarBotao("single_select", {
         title: dono ? " DONO" : " CONFIG",
-        text: dono ? "Comandos do dono (12-35)" : "Configuracoes (1-11)",
+        text: dono ? "Comandos do dono (12-46)" : "Configuracoes (1-11)",
         buttonText: " SELECIONAR",
-        sections: [{ title: dono ? "👑 COMANDOS DO DONO" : "👤 CONFIGURACOES", rows }]
+        sections
     })]
     const texto = dono
         ? `👑 𝗖𝗢𝗠𝗔𝗡𝗗𝗢𝗦 𝗗𝗢 𝗗𝗢𝗡𝗢
@@ -104,7 +119,19 @@ export const CONFIG_OPCOES = {
     "32": "cfg_viewonce_owner",
     "33": "cfg_viewonce_admins",
     "34": "cfg_viewonce_save",
-    "35": "abrir_painel"
+    "35": "abrir_painel",
+    // ── 🛡️ FLOOD · CONTROLES (36-45) ───────────────────────
+    "36": "cfg_flood_kill",
+    "37": "cfg_flood_dryrun",
+    "38": "cfg_flood_testmode",
+    "39": "cfg_flood_allowlist",
+    "40": "cfg_flood_allowlist_add",
+    "41": "cfg_flood_allowlist_remove",
+    "42": "cfg_flood_speed",
+    "43": "cfg_flood_presets",
+    "44": "cfg_flood_loja",
+    "45": "cfg_flood_xray",
+    "46": "abrir_painel"
 }
 
 export async function enviarSubmenuConfig(jid, ownerKey, modo = "adm") {
@@ -168,9 +195,32 @@ export async function enviarSubmenuConfig(jid, ownerKey, modo = "adm") {
         t += `┃ ⬥ 33 · → ADMs: ${voAdmins}\n`
         t += `┃ ⬥ 34 · Salvar: ${voSave}\n`
         t += `╰───────────────────────\n`
-        t += ` 35 · ⬅️ Voltar ao menu\n\n`
+        // ── 🛡️ FLOOD · CONTROLES — lidos da MESMA fonte do flood (features/flood/)
+        let fx = null, fxErro = null
+        try { fx = await import("../features/flood/index.js") } catch (e) { fxErro = e.message }
+        const on = fx ? fx.isKillSwitchOn() : false
+        const nAllow = fx ? fx.getAllowlist().length : 0
+        const nPresets = fx ? fx.listPresets().length : 0
+        const nCustom = fx ? (CONFIG.floodCustomPresets || []).length : 0
+        const spd = `${CONFIG.floodModo || "normal"} (${CONFIG.floodInterval || "?"}ms/l${CONFIG.floodLote || "?"})`
+        t += `╭─〔 🛡️ 𝗙𝗟𝗢𝗢𝗗 · 𝗖𝗢𝗡𝗧𝗥𝗢𝗟𝗘𝗦 〕─────\n`
+        if (fxErro) t += `┃ ⚠️ feature flood indisponível: ${fxErro}\n`
+        t += `┃ ⬥ 36 · ${on ? "▶️ Liberar" : "🛑 Bloquear"} flood (kill switch)\n`
+        t += `┃      atual: ${on ? "BLOQUEADO" : "liberado"}\n`
+        t += `┃ ⬥ 37 · 🧪 Dry-run: ${CONFIG.floodDryRun === true ? "LIGADO (não envia)" : "DESLIGADO (envia de verdade)"}\n`
+        t += `┃ ⬥ 38 · 🎯 Modo teste: ${CONFIG.floodTestMode !== false ? "LIGADO" : "DESLIGADO"}\n`
+        t += `┃      ⚠️ payment/loja só disparam com ele LIGADO\n`
+        t += `┃ ⬥ 39 · 🛡️ Allowlist de destino [${nAllow}]\n`
+        t += `┃ ⬥ 40 · ➕ Add grupo na allowlist\n`
+        t += `┃ ⬥ 41 · ➖ Remover da allowlist\n`
+        t += `┃ ⬥ 42 · 🚀 Velocidade ( presets )\n`
+        t += `┃ ⬥ 43 · 📦 Presets [${nPresets} + ${nCustom} custom]\n`
+        t += `┃ ⬥ 44 · 🛍️ Loja: preview do card (não envia)\n`
+        t += `┃ ⬥ 45 · 🩺 Raio-X do flood · velocidade atual: ${spd}\n`
+        t += `╰───────────────────────\n`
+        t += ` 46 · ⬅️ Voltar ao menu\n\n`
         t += `_📖 LIGADO: mensagens dobram após o título\n(⚡ SYZYGY) via caracteres invisíveis; o corte\né do app do WhatsApp e pode não dobrar no\niPhone. DESLIGADO: mostra tudo inteiro._\n\n`
-        t += `_Digite o número (12-35) · cancelar = sair_\n`
+        t += `_Digite o número (12-46) · cancelar = sair_\n`
         t += `▬▬▬▬▬▬▬▬▬▬▬▬▬\n⚔️ SYZYGY`
         await safeSendMessage(jid, { text: t }, 0)
         return

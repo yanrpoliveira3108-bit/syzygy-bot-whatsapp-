@@ -299,7 +299,9 @@ export {
     resolveFloodSpeed,
     formatFloodSpeedMenu,
     applyFloodSpeed,
-    toFloodOpts
+    toFloodOpts,
+    CUSTOM_INTERVAL_MIN,
+    CUSTOM_INTERVAL_MAX
 } from "./speed.js"
 
 export {

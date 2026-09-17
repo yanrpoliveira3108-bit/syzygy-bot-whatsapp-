@@ -434,7 +434,7 @@ fi
 # ── 6) validação (não adianta atualizar e descobrir amanhã) ──────────────────
 VAL=0
 if [ -f index.js ]; then node --check index.js 2>/dev/null && ok "index.js parseia" || { warn "index.js NÃO parseia"; VAL=1; }; fi
-for t in features/flood/tests.js features/flood/tests-infra.js; do
+for t in features/flood/tests.js features/flood/tests-infra.js features/flood/tests-menu.js; do
   if [ -f "$t" ]; then
     log "rodando $t"
     if node "$t" > "$BK/$(basename "$t").log" 2>&1; then ok "$t verde"; else warn "$t FALHOU — resumo em $BK/$(basename "$t").log"; VAL=1; fi

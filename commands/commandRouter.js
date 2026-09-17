@@ -45,7 +45,18 @@ export const OWNER_ONLY = new Set([
     "cfg_viewonce_groups",
     "cfg_viewonce_owner",
     "cfg_viewonce_admins",
-    "cfg_viewonce_save"
+    "cfg_viewonce_save",
+    // [FLOOD v2] controles da feature features/flood/ (só dono)
+    "cfg_flood_kill",
+    "cfg_flood_dryrun",
+    "cfg_flood_testmode",
+    "cfg_flood_allowlist",
+    "cfg_flood_allowlist_add",
+    "cfg_flood_allowlist_remove",
+    "cfg_flood_speed",
+    "cfg_flood_presets",
+    "cfg_flood_loja",
+    "cfg_flood_xray"
 ])
 
 export async function roteadorAcoes(chatJid, ownerKey, actionId) {
@@ -315,6 +326,145 @@ export async function roteadorAcoes(chatJid, ownerKey, actionId) {
         await getSock().sendMessage(chatJid, { text: `Anti-takeover agora: ${CONFIG.antiTakeover ? "LIGADO" : "DESLIGADO"}\n\nDetecta perda de admin, remoção e promoções suspeitas.` })
         return
     }
+    // ══ [FLOOD v2] 🛡️ FLOOD · CONTROLES (36-45) ════════════════════════════
+    // Tudo aqui LÊ/MUTA o estado da feature features/flood/ pela API pública do
+    // barrel (../features/flood/index.js). Nenhum caminho daqui chama
+    // sock.sendMessage() para enviar flood: os toggles só gravam config e os
+    // previews montam payload sem enviar.
+    if (actionId === "cfg_flood_kill") {
+        try {
+            const fx = await import("../features/flood/index.js")
+            const agora = fx.toggleKillSwitch({ persist: true })
+            await getSock().sendMessage(chatJid, {
+                text: `${agora ? "🛑 Flood BLOQUEADO (kill switch ligado)" : "▶️ Flood liberado"}\n\n${fx.killSwitchStatusTexto()}\n\n_Efeito: jobs de preset param na fronteira do lote e o flood clássico do wizard também._`
+            })
+        } catch (e) {
+            await getSock().sendMessage(chatJid, { text: `❌ kill switch: ${e.message}` })
+        }
+        return
+    }
+    if (actionId === "cfg_flood_dryrun") {
+        const { CONFIG, salvarConfig } = await import("../utils/config.js")
+        const novo = !(CONFIG.floodDryRun === true)
+        CONFIG.floodDryRun = novo
+        salvarConfig()
+        await getSock().sendMessage(chatJid, {
+            text: `🧪 Dry-run do flood: ${novo ? "LIGADO" : "DESLIGADO"}\n\n${novo
+                ? "Monta conteúdo, alvos e métricas, mas NÃO envia nada.\nÉ o padrão da feature — deixa ligado até você validar o card."
+                : "⚠️ Agora os disparos SAEM de verdade para os alvos da allowlist.\nRecomendado: 1 destino de teste, qtd 1, e o kill switch por perto (36)."}`
+        })
+        return
+    }
+    if (actionId === "cfg_flood_testmode") {
+        const { CONFIG, salvarConfig } = await import("../utils/config.js")
+        const novo = !(CONFIG.floodTestMode !== false)
+        CONFIG.floodTestMode = novo
+        salvarConfig()
+        await getSock().sendMessage(chatJid, {
+            text: `🎯 Modo teste: ${novo ? "LIGADO" : "DESLIGADO"}\n\n${novo
+                ? "Permite payment e loja (o card de loja é montado a partir de um preset, com aviso)."
+                : "⚠️ Com modo teste DESLIGADO o preset engine responde PAYMENT_TEST_DISABLED / SHOPPING_TEST_DISABLED — loja e pagamento ficam bloqueados."}`
+        })
+        return
+    }
+    if (actionId === "cfg_flood_allowlist") {
+        try {
+            const fx = await import("../features/flood/index.js")
+            await getSock().sendMessage(chatJid, {
+                text: `${fx.formatAllowlistTexto()}\n\n_Sem allowlist, TODO destino é barrado (ALLOWLIST_EMPTY / BLOCKED_TARGET)._\n40 = adicionar · 41 = remover · 42 = velocidade · 43 = presets`
+            })
+        } catch (e) {
+            await getSock().sendMessage(chatJid, { text: `❌ allowlist: ${e.message}` })
+        }
+        return
+    }
+    if (actionId === "cfg_flood_allowlist_add") {
+        const { CONFIG } = await import("../utils/config.js")
+        const grupos = CONFIG.gruposAutorizados || []
+        let t = `🛡️ ADD NA ALLOWLIST DO FLOOD\n\nEnvie UMA linha com:\n  • o número do grupo autorizado (abaixo), OU\n  • o JID completo (5519999999999-9999@g.us)\n\n`
+        t += grupos.length
+            ? grupos.slice(0, 20).map((g, i) => `  ${i + 1} · ${g}`).join("\n")
+            : "_nenhum grupo autorizado ainda — mande o JID_"
+        t += `\n\n_Nada é enviado ao adicionar; allowlist é só a porta de saída do flood._\n(cancelar para sair)`
+        setState(ownerKey, { action: "config_set_flood_allowlist_add" })
+        await getSock().sendMessage(chatJid, { text: t })
+        return
+    }
+    if (actionId === "cfg_flood_allowlist_remove") {
+        try {
+            const fx = await import("../features/flood/index.js")
+            setState(ownerKey, { action: "config_set_flood_allowlist_remove" })
+            await getSock().sendMessage(chatJid, {
+                text: `${fx.formatAllowlistTexto()}\n\nDigite o NÚMERO da linha a remover (1-based) ou o JID.\n(cancelar para sair)`
+            })
+        } catch (e) {
+            await getSock().sendMessage(chatJid, { text: `❌ allowlist: ${e.message}` })
+        }
+        return
+    }
+    if (actionId === "cfg_flood_speed") {
+        try {
+            const fx = await import("../features/flood/index.js")
+            setState(ownerKey, { action: "config_set_flood_speed" })
+            await getSock().sendMessage(chatJid, {
+                text: `${fx.formatFloodSpeedMenu()}\n\n_o valor escolhido vale para o flood clássico (config.json) e é o overlay de velocidade dos presets (concorrência nunca sobe acima do preset; payment/loja ficam em 1 por vez)._\n(cancelar para sair)`
+            })
+        } catch (e) {
+            await getSock().sendMessage(chatJid, { text: `❌ velocidade: ${e.message}` })
+        }
+        return
+    }
+    if (actionId === "cfg_flood_presets") {
+        try {
+            const fx = await import("../features/flood/index.js")
+            const cap = fx.FLOOD_PRESET_HARD_CAP
+            await getSock().sendMessage(chatJid, {
+                text: `${fx.listPresetsTexto()}\n\n${fx.formatCustomPresetsTexto()}\n\n_Teto por job: ${cap.maxMessages} msg · intervalo mín. ${cap.minInterval}ms · ${cap.maxConcurrency} por vez · cooldown mín. ${cap.minCooldown}ms.\nPara usar: menu → 🌊 FLOOD → grupo → qtd → modo → conteúdo (loja:… para o card)._`
+            })
+        } catch (e) {
+            await getSock().sendMessage(chatJid, { text: `❌ presets: ${e.message}` })
+        }
+        return
+    }
+    if (actionId === "cfg_flood_loja") {
+        setState(ownerKey, { action: "config_set_flood_loja" })
+        await getSock().sendMessage(chatJid, {
+            text: `🛍️ PREVIEW DA LOJA (não envia nada)\n\nEnvie o overlay do card:\n  0                                  → preset padrão\n  texto livre                        → corpo livre\n  texto|titulo|wa                    → texto|title|surface (fb|ig|wa ou 1|2|3)\n  texto|titulo|wa|meu-shop-id        → com shop.id\n  loja flow                          → mesmo card pelo ramo nativeFlow\n\n_O preview mostra as chaves do send e o ramo do wire — é assim que se confere se o card existe de fato no payload._\n(cancelar para sair)`
+        })
+        return
+    }
+    if (actionId === "cfg_flood_xray") {
+        try {
+            const fx = await import("../features/flood/index.js")
+            const { CONFIG } = await import("../utils/config.js")
+            const rc = fx.getFloodRuntimeConfig()
+            const cap = fx.FLOOD_PRESET_HARD_CAP
+            const defId = fx.DEFAULT_FLOOD_PRESET_ID
+            const def = fx.getPresetDef(defId)
+            const cd = def ? fx.remainingCooldown(defId, def.cooldownMs || 0) : 0
+            const job = fx.currentJobInfo()
+            const t = [
+                "🩺 RAIO-X DO FLOOD",
+                `• kill switch: ${rc.killSwitch ? "LIGADO (bloqueado)" : "desligado"}`,
+                `• dry-run: ${rc.dryRun ? "LIGADO (nada sai)" : "DESLIGADO (envia de verdade!)"}`,
+                `• modo teste: ${rc.testMode ? "LIGADO (payment/loja permitidos)" : "DESLIGADO (payment/loja barrados)"}`,
+                `• allowlist: ${rc.allowlist.length} destino(s)${rc.allowlist.length ? "" : " → todo disparo morre em ALLOWLIST_EMPTY (porta de saída, não bug)"}`,
+                `• config do flood clássico: ${CONFIG.floodModo} ${CONFIG.floodInterval}ms/lote${CONFIG.floodLote}`,
+                `• timeout por send: ${rc.timeoutMs}ms · retries: ${rc.maxRetries}`,
+                `• teto de preset: ${cap.maxMessages} msg · mín ${cap.minInterval}ms · conc ${cap.maxConcurrency} · cooldown mín ${cap.minCooldown}ms`,
+                `• cooldown do preset "${defId}": ${cd > 0 ? `${cd}ms restantes` : "livre"}`,
+                `• job em andamento: ${job ? `${job.presetId} (${job.type}) há ${Math.round(job.elapsedMs / 1000)}s · ${job.targets.length} alvo(s)${job.cancelled ? " · CANCELANDO" : ""}` : "nenhum"}`,
+                `• presets ligados: ${fx.listPresetIds().length} + ${fx.listCustomPresets().length} custom`,
+                "",
+                "_quer parar um job agora? 36 (kill switch) — a fila para na fronteira do lote._"
+            ].join("\n")
+            await getSock().sendMessage(chatJid, { text: t })
+        } catch (e) {
+            await getSock().sendMessage(chatJid, { text: `❌ raio-x: ${e.message}` })
+        }
+        return
+    }
+
     if (actionId === "cfg_limpar_fantasmas") {
         await getSock().sendMessage(chatJid, { text: "Limpando grupos fantasmas..." })
         try {
