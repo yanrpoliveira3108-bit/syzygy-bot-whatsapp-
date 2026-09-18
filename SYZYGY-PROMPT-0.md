@@ -156,8 +156,8 @@ node --input-type=module -e 'import("./connection/baileysCompat.js").then(m=>con
 ./  (raiz)
   index.js                   45 l  · [REORGANIZAÇÃO] Ponto de entrada do SYZYGY. Apenas COORDEN
   recover.sh                130 l
-  start.sh                  121 l
-  update.sh                 477 l
+  start.sh                  132 l
+  update.sh                 549 l
 connection/
   baileysCompat.js           46 l  · [v48→v51] CAMADA DE COMPATIBILIDADE BAILEYS — ÚNICO ponto 
   pairing.js                 52 l  · [REORGANIZAÇÃO] Fluxo de PAIRING CODE (não QR). Preservado
@@ -265,6 +265,7 @@ contada de cabeça.)
 | `actions/groupActions.js` | 48 | descrito (§10) |
 | `commands/commandMap.js` | 69 | anexado (§9) |
 | `commands/commandRouter.js` | 672 | anexado (§9) |
+| `config.example.json` | 30 | descrito (§10) |
 | `connection/baileysCompat.js` | 46 | anexado (§9) |
 | `connection/pairing.js` | 52 | anexado (§9) |
 | `connection/sessionRecovery.js` | 122 | anexado (§9) |
@@ -332,8 +333,8 @@ contada de cabeça.)
 | `services/notificationService.js` | 76 | descrito (§10) |
 | `services/presetService.js` | 89 | descrito (§10) |
 | `services/serverInspector.js` | 410 | descrito (§10) |
-| `start.sh` | 121 | descrito (§10) |
-| `update.sh` | 477 | descrito (§10) |
+| `start.sh` | 132 | descrito (§10) |
+| `update.sh` | 549 | descrito (§10) |
 | `utils/botoes.js` | 123 | descrito (§10) |
 | `utils/config.js` | 170 | anexado (§9) |
 | `utils/lerMais.js` | 47 | anexado (§9) |
@@ -342,7 +343,7 @@ contada de cabeça.)
 | `utils/permissions.js` | 353 | anexado (§9) |
 | `utils/stateManager.js` | 25 | anexado (§9) |
 | `utils/terminalUI.js` | 94 | descrito (§10) |
-| **total** | **15.868** | 34 anexados · 49 descritos · suítes citadas |
+| **total** | **15.981** | 34 anexados · 49 descritos · suítes citadas |
 
 ## 3. Comandos que existem (o usuário só digita isto)
 
@@ -700,7 +701,7 @@ legacy-peer-deps=true
 
 ```
 
-### .gitignore — 28 linhas (0.2 KB)
+### .gitignore — 45 linhas (0.9 KB)
 
 ```js
 node_modules/
@@ -730,6 +731,23 @@ temp/
 
 # backups locais criados por ./update.sh (nunca versionar)
 .syzygy-backup/
+
+# ── ESTADO DE RUNTIME — nunca versionar (chave privada de sessão aqui!) ──────
+# sessao/ é o store do Baileys (pre-key, signed pre-key, app-state sync KEY,
+# creds). Publicar = entregar a sessão do WhatsApp. dono/ é o estado do painel
+# (histórico, presets com foto, config de status) e config.json é o número real
+# do dono + a lista de grupos. Clone novo: copie config.example.json → config.json.
+sessao/
+config.json
+dono/*
+!dono/menus/
+!dono/menus/**
+dono/menus/**/*
+!dono/menus/Foto-menu/
+!dono/menus/Foto-menu/.gitkeep
+
+# o que o update.sh cria ao redor de uma aplicação de ref
+.syzygy-backup/**/collide/
 
 ```
 
@@ -6923,7 +6941,7 @@ export function formatUptime(ms)
 export const COLORS
 ```
 
-### start.sh — 121 linhas (3.2 KB) · NÃO anexado por causa do orçamento
+### start.sh — 132 linhas (3.8 KB) · NÃO anexado por causa do orçamento
 
 Exportações (assinaturas exatas):
 
@@ -6931,7 +6949,7 @@ Exportações (assinaturas exatas):
 (sem exportações nomeadas)
 ```
 
-### update.sh — 477 linhas (24.4 KB) · NÃO anexado por causa do orçamento
+### update.sh — 549 linhas (27.9 KB) · NÃO anexado por causa do orçamento
 
 Exportações (assinaturas exatas):
 

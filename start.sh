@@ -86,6 +86,17 @@ else
   die "package.json não define scripts.start. O SYZYGY espera \"start\": \"node index.js\"."
 fi
 
+# config.json é estado do aparelho (número do dono, grupos, ritmo), não código:
+# ele saiu do git na v53. Clone novo começa do template — quem já tem o seu não
+# é tocado em nada.
+if [ ! -f "$ROOT/config.json" ] && [ -f "$ROOT/config.example.json" ]; then
+  if cp "$ROOT/config.example.json" "$ROOT/config.json"; then
+    log "criei config.json a partir de config.example.json — confira número do dono e grupos nele (ou ajuste depois pelo painel 12-41)"
+  else
+    warn "não consegui criar config.json; o bot vai rodar com os padrões embutidos"
+  fi
+fi
+
 log "Comando de start (package.json): $START_CMD"
 
 RUNNING=$(find_running_pid || true)

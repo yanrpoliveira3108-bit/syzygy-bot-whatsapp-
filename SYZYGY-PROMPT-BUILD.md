@@ -26,9 +26,9 @@
 |---|---|
 | bundle gerado por | `tools/gerar-prompt-build.mjs` (rode-o para re-sincronizar) |
 | especificação base | `PROMPT-RECONSTRUCAO-SYZYGY.md` |
-| arquivos de fonte incluídos | 84 |
-| linhas de fonte incluídas | 15907 |
-| tamanho do apêndice | 773 KB |
+| arquivos de fonte incluídos | 85 |
+| linhas de fonte incluídas | 16037 |
+| tamanho do apêndice | 778 KB |
 | segredos | removidos — redações aplicadas em: ./utils/config.js, ./utils/permissions.js, ./features/viewOnce/tests.js |
 | estado do projeto quando este bundle foi feito | AB7 v51 — Baileys trocada para `@lucasmod/boruto-vk7-baileys@2.1.0`, `connection/baileysCompat.js` reancorado, `.npmrc` de instalação criado; suítes verdes: shopping 184 · menu 83 · infra 228 · viewOnce ✓ |
 | divergência conhecida do fork novo | o ramo combinado `nativeFlow+shop` (que punha `shopStorefrontMessage.messageVersion = 1`) não existe aqui ⇒ modo `flow` degenera em `puro`; `viewOnce: true` embrulha em `viewOnceMessageV2` (antes `viewOnceMessage`) — em ambos os casos a regra é a mesma: nunca mandar `viewOnce` no card de loja |
@@ -37,6 +37,18 @@
 
 # PARTE A — ESPECIFICAÇÃO
 
+> **🛑 Nota (v53) — leia antes do bloco abaixo.** Este arquivo é o prompt
+> histórico e está **desatualizado de propósito** a partir daqui: na v53 saíram o
+> tipo `shopping` (card de loja), a `allowlist` do flood, o `dry-run` e o
+> `floodTestMode`; o painel do dono passou a ser **12–41** (42–47 respondem
+> "opção removida"). O contrato atual do flood está em
+> `features/flood/README.md`, e a especificação byte-a-byte do fonte vivo está em
+> `SYZYGY-PROMPT-0.md` (prompt) / `SYZYGY-PROMPT-BUILD.md` (espelho, gerados por
+> `npm run prompt` e `npm run prompt:full`). Regra de ouro que continua valendo:
+> um único `executarFlood`, alvo sempre escolha explícita do operador, nada de
+> segundo executor. Especificação executável: as três suítes de
+> `features/flood/tests*.js` (161 + 195 + 208 asserts, todas offline).
+>
 > **⚠️ Nota (2026-09-17, v51).** A dependência de WhatsApp deste projeto mudou:
 > o `@innovatorssoft/baileys@7.4.7` citado abaixo foi substituído por
 > **`@lucasmod/boruto-vk7-baileys@2.1.0`** (repo `Otakump4/boruto_vk7-baileys`).
@@ -1154,7 +1166,7 @@ pelo wizard é o A/B; `floodstop` no meio de um flood tem que parar na fronteira
 ---
 
 # PARTE B — CÓDIGO-FONTE DE REFERÊNCIA
-Estes 84 arquivos são o projeto real, na ordem em que devem ser
+Estes 85 arquivos são o projeto real, na ordem em que devem ser
 lidos/criados. Copiar é permitido e desejado: cada linha aqui já foi validada em
 produção. Onde um arquivo mencionar número/JID como `5519XXXXXXXXX`, é redação
 intencional deste bundle (ver 2.2), não bug.
@@ -1245,6 +1257,7 @@ intencional deste bundle (ver 2.2), não bug.
 82. ./recover.sh
 83. ./.gitignore
 84. ./.npmrc
+85. ./config.example.json
 
 #### `./package.json` — 24 linhas, 657 bytes
 
@@ -16781,7 +16794,7 @@ export { safeSendMessage, STATUS_JID, FONTES_STATUS, CORES_STATUS }
 
 ```
 
-#### `./start.sh` — 121 linhas, 3309 bytes
+#### `./start.sh` — 132 linhas, 3878 bytes
 
 ```sh
 #!/usr/bin/env bash
@@ -16872,6 +16885,17 @@ else
   die "package.json não define scripts.start. O SYZYGY espera \"start\": \"node index.js\"."
 fi
 
+# config.json é estado do aparelho (número do dono, grupos, ritmo), não código:
+# ele saiu do git na v53. Clone novo começa do template — quem já tem o seu não
+# é tocado em nada.
+if [ ! -f "$ROOT/config.json" ] && [ -f "$ROOT/config.example.json" ]; then
+  if cp "$ROOT/config.example.json" "$ROOT/config.json"; then
+    log "criei config.json a partir de config.example.json — confira número do dono e grupos nele (ou ajuste depois pelo painel 12-41)"
+  else
+    warn "não consegui criar config.json; o bot vai rodar com os padrões embutidos"
+  fi
+fi
+
 log "Comando de start (package.json): $START_CMD"
 
 RUNNING=$(find_running_pid || true)
@@ -16907,7 +16931,7 @@ exit 0
 
 ```
 
-#### `./update.sh` — 477 linhas, 25019 bytes
+#### `./update.sh` — 549 linhas, 28574 bytes
 
 ```sh
 #!/usr/bin/env bash
@@ -17204,10 +17228,78 @@ collide_fix() {
     [ -f "$f" ] || continue
     d="$BK/collide/$(dirname "$f")"; mkdir -p "$d"
     cp -a "$f" "$d/" 2>/dev/null && rm -f "$f" && warn "arquivo seu não rastreado movido para o backup (o merge o sobrescreveria): $f"
+    # registra: um arquivo de RUNTIME (sessao/pre-key, creds, config) é sempre o
+    # que manda — o do repositório é snapshot velho. Devolvemos no fim.
+    printf '%s\n' "$f" >> "$BK/collide.list"
   done
   rm -f "$untracked_list" "$incoming"
   return 0
 }
+
+# Devolve o que era seu: sem isto, um update "de sucesso" deixava o sessao/ sem
+# pre-key e a sessão sofria no dia seguinte.
+restore_collided() {
+  [ -s "$BK/collide.list" ] || return 0
+  n=0
+  for f in $(sort -u "$BK/collide.list"); do
+    [ -f "$BK/collide/$f" ] || continue
+    mkdir -p "$(dirname "$f")" 2>/dev/null
+    if cmp -s "$BK/collide/$f" "$f" 2>/dev/null; then continue; fi
+    cp -a "$BK/collide/$f" "$f" && n=$((n+1))
+  done
+  [ "$n" = "0" ] || ok "devolvidos $n arquivo(s) seus realocados pelo collide_fix (o seu vence o snapshot do repo)"
+  return 0
+}
+
+# Vital que a ref nova apagou do repo (ex.: sessao/ e config.json deixaram de ser
+# rastreados): se sumiu do disco, volta do vital.tgz — sem isto, "--cached"
+# no lado de quem publicou vira perda de sessão no aparelho de quem atualiza.
+vital_reassert() {
+  [ -f "$BK/vital.tgz" ] || return 0
+  lost=""
+  for v in $VITAL; do
+    [ -e "$ROOT/$v" ] || lost="$lost $v"
+  done
+  [ -n "$lost" ] || return 0
+  log "restaurando do backup o que a ref nova não trackeia mais:$lost"
+  # só o que sumiu (extração seletiva): nunca por cima de arquivo que ainda está aí
+  tar -xzf "$BK/vital.tgz" -C "$ROOT" $lost 2>/dev/null && ok "vital reconstituído" || warn "não consegui reconstituir$lost — está em $(basename "$BK")/vital.tgz"
+}
+
+# ── guarda: índice com entrada unmerged trava TODO merge/ff ──────────────────
+# Foi assim que um update falhou no aparelho: sobrou estado de um merge
+# interrompido (MERGE_HEAD/arquivos UU) e o git se recusou a mexer em qualquer
+# coisa. O snapshot do backup já foi feito a esta altura, então dá para
+# desarmar o processo interrompido sem risco de perder trabalho.
+GD=$(git rev-parse --git-dir)
+unmerged_guard() {
+  n=$(git ls-files -u 2>/dev/null | wc -l | tr -d ' ')
+  [ "$n" != "0" ] || return 0
+  warn "índice tem $n entrada(s) unmerged (merge interrompido?) — isso trava ff e merge"
+  git ls-files -u 2>/dev/null | awk '{print $4}' | sort -u | head -8 | sed 's/^/    /'
+  if [ -f "$GD/MERGE_HEAD" ]; then
+    log "git merge --abort (devolve o estado para antes do merge interrompido)"
+    git merge --abort 2>/dev/null || warn "merge --abort não correu bem"
+  elif [ -d "$GD/rebase-merge" ] || [ -d "$GD/rebase-apply" ]; then
+    log "git rebase --abort"
+    git rebase --abort 2>/dev/null || warn "rebase --abort não correu bem"
+  elif [ -f "$GD/CHERRY_PICK_HEAD" ] || [ -f "$GD/REVERT_HEAD" ]; then
+    log "git cherry-pick/revert --abort"
+    git cherry-pick --abort 2>/dev/null; git revert --abort 2>/dev/null
+  fi
+  # o que sobrar é só índice marcado: reset limpa a marca SEM tocar nos arquivos
+  if [ -n "$(git ls-files -u 2>/dev/null | head -1)" ]; then
+    log "git reset (só o índice; sua árvore não é tocada) para limpar as marcas"
+    git reset -q 2>/dev/null || warn "git reset não limpo o índice"
+  fi
+  if [ -n "$(git ls-files -u 2>/dev/null | head -1)" ]; then
+    die "ainda há entrada unmerged — resolva na mão (o backup está em ${BK#$ROOT/}):
+    git status -s
+    ./update.sh --restore $TS"
+  fi
+  ok "índice limpo, pode continuar"
+}
+unmerged_guard
 
 # ── 3b) --adopt: adotar a árvore de uma ref (linhagens divergentes) ───────────
 if [ "$MODE" = "adopt" ]; then
@@ -17324,6 +17416,10 @@ for ref in $REFS; do
 done
 
 reapply_local_work
+# ordem importa: primeiro o vital que a ref nova não trackeia, depois o que era
+# seu e o collide_fix realocou (a cópia viva é a mais recente = vence).
+vital_reassert
+restore_collided
 
 # ── 5) dependências ──────────────────────────────────────────────────────────
 need_npm=0
@@ -17353,7 +17449,7 @@ for t in features/flood/tests.js features/flood/tests-infra.js features/flood/te
   fi
 done
 if [ -f features/flood/doctor.mjs ]; then
-  node features/flood/doctor.mjs > "$BK/doctor.log" 2>&1 && ok "doctor.mjs ok (dry-run, zero envio)" || warn "doctor.mjs apontou algo — veja $BK/doctor.log"
+  node features/flood/doctor.mjs > "$BK/doctor.log" 2>&1 && ok "doctor.mjs ok (diagnóstico de leitura, zero envio)" || warn "doctor.mjs apontou algo — veja $BK/doctor.log"
 fi
 
 if command -v node >/dev/null 2>&1 && [ -f package.json ]; then
@@ -17524,7 +17620,7 @@ esac
 
 ```
 
-#### `./.gitignore` — 28 linhas, 255 bytes
+#### `./.gitignore` — 45 linhas, 896 bytes
 
 ```text
 node_modules/
@@ -17555,6 +17651,23 @@ temp/
 # backups locais criados por ./update.sh (nunca versionar)
 .syzygy-backup/
 
+# ── ESTADO DE RUNTIME — nunca versionar (chave privada de sessão aqui!) ──────
+# sessao/ é o store do Baileys (pre-key, signed pre-key, app-state sync KEY,
+# creds). Publicar = entregar a sessão do WhatsApp. dono/ é o estado do painel
+# (histórico, presets com foto, config de status) e config.json é o número real
+# do dono + a lista de grupos. Clone novo: copie config.example.json → config.json.
+sessao/
+config.json
+dono/*
+!dono/menus/
+!dono/menus/**
+dono/menus/**/*
+!dono/menus/Foto-menu/
+!dono/menus/Foto-menu/.gitkeep
+
+# o que o update.sh cria ao redor de uma aplicação de ref
+.syzygy-backup/**/collide/
+
 ```
 
 #### `./.npmrc` — 11 linhas, 646 bytes
@@ -17570,6 +17683,41 @@ temp/
 ; Não remova sem re-verificar a instalação da lib.
 ignore-scripts=true
 legacy-peer-deps=true
+
+```
+
+#### `./config.example.json` — 30 linhas, 709 bytes
+
+```json
+{
+  "nome": "SYZYGY",
+  "bio": "⚔️ SYZYGY ⚡",
+  "menuImage": "./dono/menus/Foto-menu/img-menu.jpg",
+  "ownerOverride": "5519000000000",
+  "uiMode": "text",
+  "grupoOficial": "",
+  "linkDivulgacao": "",
+  "lerMais": false,
+  "marcarFantasma": true,
+  "floodModo": "normal",
+  "floodInterval": 150,
+  "floodLote": 5,
+  "floodJitter": false,
+  "autoLimpeza": true,
+  "antiTakeover": true,
+  "usuariosAutorizados": [],
+  "gruposAutorizados": [],
+  "lidsAutorizados": [],
+  "donosExtras": [],
+  "floodKillSwitch": false,
+  "floodMaxRetries": 1,
+  "floodTimeoutMs": 15000,
+  "floodMaxMensagens": 2000,
+  "floodErrorStop": 3,
+  "floodPaceAdaptativo": true,
+  "floodTipo": "texto",
+  "floodCustomPresets": []
+}
 
 ```
 
