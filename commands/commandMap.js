@@ -39,5 +39,30 @@ export const TEXT_TO_ACTION = {
     "botstatus": "cfg_status",
     "!botstatus": "cfg_status",
     "bloks": "server_inspector",
-    "!bloks": "server_inspector"
+    "!bloks": "server_inspector",
+
+    // [v53] atalhos de flood da arena 01a0aaae — MESMOS nomes que você digitava,
+    // implementação na fachada features/flood/router.js sobre o runPresetJob da
+    // AB7. `shoppingtest` e `flooddryrun` saíram junto com shopping/dry-run.
+    "floodpresets": "painel_flood_presets",
+    "floodpreset": "painel_flood_presets",
+    "paymenttest": "flood_preset_payment_test",
+    "texttest": "flood_preset_text_test",
+    "mentiontest": "flood_preset_mention_test",
+    "mediatest": "flood_preset_media_test",
+    "floodstop": "flood_kill_on",
+    "floodstart": "flood_kill_off",
+    "pagamento": "painel_flood_pagamento",
+    "!pagamento": "painel_flood_pagamento",
+    "floodpagamento": "painel_flood_pagamento",
+    "!floodpagamento": "painel_flood_pagamento",
+    "floodalvos": "cfg_flood_targets",
+    "!floodalvos": "cfg_flood_targets",
+    "!floodpresets": "painel_flood_presets",
+    "!paymenttest": "flood_preset_payment_test",
+    "!texttest": "flood_preset_text_test",
+    "!mentiontest": "flood_preset_mention_test",
+    "!mediatest": "flood_preset_media_test",
+    "!floodstop": "flood_kill_on",
+    "!floodstart": "flood_kill_off"
 }

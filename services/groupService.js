@@ -5,7 +5,12 @@ import fs from "fs"
 import { getSock, rt } from "../connection/socket.js"
 import { normalizeNumber, getOwnerNumber, isAuthorizedGroup } from "../utils/permissions.js"
 import { err, ok, warn } from "../utils/terminalUI.js"
-import { CONFIG, MAX_FLOOD, FLOOD_MODOS } from "../utils/config.js"
+import { CONFIG, FLOOD_MODOS, floodMaxEfetivo, FLOOD_TIPOS } from "../utils/config.js"
+import { getFloodRuntimeConfig } from "../features/flood/config.js"
+// [INFRA FLOOD] Kill switch dos presets, recuperado da arena 01a0aaae.
+// Import direto (não passa por features/flood/index.js) para não arrastar o resto da
+// feature para dentro do serviço mais quente do projeto.
+import { isKillSwitchOn } from "../features/flood/killswitch.js"
 import { prepararFoto, prepararFotoBuffer, fetchImagem } from "./mediaService.js"
 
 function isProtectedGroup(jid) {
@@ -106,7 +111,7 @@ export async function alterarBioGrupo(jid, bio) {
 
 // [v58] TROCA DE FOTO COM RETRY — a foto é o ÚNICO passo de roubar/nuke que
 // depende da CONEXÃO DE MÍDIA (upload HTTP). Bug conhecido do fork
-// (@innovatorssoft/baileys 7.4.7): se UMA busca de media_conn falhar, a
+// (@lucasmod/boruto-vk7-baileys 2.1.0, e já valia no innovatorssoft 7.4.7): se UMA busca de media_conn falhar, a
 // promise rejeitada fica NO CACHE e todos os uploads seguintes falham até
 // reconectar ("depois de um tempo a foto não muda mais" — nome/bio/fechar
 // continuam porque vão pelo canal de sinal). Aqui: retry com backoff +
@@ -243,7 +248,10 @@ export function getFloodConfig(modoOuIntervalo) {
         return {
             intervalo: modoOuIntervalo.intervaloMs ?? modoOuIntervalo.intervalo ?? m?.intervalo ?? CONFIG.floodInterval ?? 100,
             lote: modoOuIntervalo.lote ?? m?.lote ?? CONFIG.floodLote ?? 6,
-            jitter: modoOuIntervalo.jitter ?? (modoOuIntervalo.modo === "seguro") ?? CONFIG.floodJitter ?? false,
+            // ?? com boolean à esquerda nunca caía adiante: o config de jitter era
+            // ignorado no caminho de objeto (presets). Corrigido sem mudar a prioridade
+            // de quem passa jitter explícito.
+            jitter: modoOuIntervalo.jitter ?? (modoOuIntervalo.modo === "seguro" ? true : !!CONFIG.floodJitter),
             modo: modoOuIntervalo.modo || CONFIG.floodModo || "normal"
         }
     }
@@ -274,17 +282,28 @@ export function getFloodConfig(modoOuIntervalo) {
 }
 
 // [v29] Flood ultra rápido
-export async function executarFlood(jid, msg, qtd, intervaloOuOpts = 100) {
+export async function executarFlood(jid, msg, qtd, intervaloOuOpts = 100, buildContent = null) {
     if (isProtectedGroup(jid)) throw new Error("Grupo protegido (autorizado) — FLOOD bloqueado")
     const sock = getSock()
-    qtd = Math.min(Math.max(1, qtd), MAX_FLOOD)
+    qtd = Math.min(Math.max(1, qtd), floodMaxEfetivo())
 
     const cfg = getFloodConfig(intervaloOuOpts)
-    const intervaloMs = cfg.intervalo
-    const LOTE = Math.max(1, Math.min(cfg.lote, 10))
+    const rc = getFloodRuntimeConfig()
+    // [v53] Lote até 20: o gargalo é o relay do WhatsApp, não o nosso loop — lote
+    // maior fecha o job mais cedo (menos janela de reconexão no meio do flood).
+    const LOTE = Math.max(1, Math.min(cfg.lote, 20))
+    // retries do config agora VALEM: só cobram preço no erro (backoff de rate-limit
+    // dentro do próprio safeSendMessage), nunca no caminho feliz.
+    const retries = rc.maxRetries
+    const erroStop = Math.max(1, rc.errorStop)
+    const paceAdaptativo = rc.paceAdaptativo !== false
 
     let mentions = []
-    if (CONFIG.marcarFantasma) {
+    // Só vale buscar participantes se o conteúdo NÃO trouxer mentions própria
+    // (payment/mention definem as suas) — em grupo grande esse fetch é o único
+    // round-trip de metadata do job e custa segundos na largada.
+    const querMencoes = CONFIG.marcarFantasma && typeof buildContent !== "function"
+    if (querMencoes) {
         try {
             const parts = await getParticipantsCachedOrFetch(jid)
             mentions = parts.map(p => p.id)
@@ -292,43 +311,121 @@ export async function executarFlood(jid, msg, qtd, intervaloOuOpts = 100) {
     }
 
     const invis = "\u200b"
+    const pad = [1, 2, 3, 4, 5, 6].map(n => invis.repeat(n))
     let ok = 0, erros = 0
+    let stopado = null
+    let tentadas = 0
+    let atraso = Math.max(0, cfg.intervalo)
+    const intervaloBase = atraso
+    let errosSeguidos = 0
+    const t0 = Date.now()
 
     for (let i = 0; i < qtd; i += LOTE) {
+        // [INFRA FLOOD] O flood clássico não tinha como ser interrompido. O kill
+        // switch é consultado na fronteira do lote (nunca no meio de um Promise).
+        if (isKillSwitchOn()) { stopado = "KILL_SWITCH"; break }
         const n = Math.min(LOTE, qtd - i)
+        tentadas += n
         const envios = []
         for (let k = 0; k < n; k++) {
             const idx = i + k
-            const corpo = msg + invis.repeat((idx % 6) + 1)
-            const opts = { text: corpo }
-            if (mentions.length && k === 0) opts.mentions = mentions
-            envios.push(
-                safeSendMessage(jid, opts, 0).then(() => { ok++ }).catch(() => { erros++ })
-            )
+            const corpo = msg + pad[idx % pad.length]
+            // CONTEÚDO por iteração: sem builder, é EXATAMENTE o flood clássico
+            // ({ text }). Todo TIPO de conteúdo (ex.: 💳 pagamento) entra pelo
+            // buildContent — mesmo laço, mesma fila, mesmo throttle, mesmas
+            // permissões. Não existe segundo executor.
+            let opts
+            if (typeof buildContent === "function") {
+                let custom = null
+                try { custom = buildContent({ index: idx, body: corpo, msg }) } catch { custom = null }
+                opts = custom && typeof custom === "object" ? custom : { text: corpo }
+            } else {
+                opts = { text: corpo }
+            }
+            // "mentions" só é sobrescrito pelo marcarFantasma quando o builder NÃO
+            // forneceu lista própria: marca só destinos explicitamente autorizados.
+            if (mentions.length && k === 0 && opts.mentions === undefined) opts.mentions = mentions
+            envios.push(safeSendMessage(jid, opts, retries))
         }
-        await Promise.all(envios)
-        if (i + LOTE < qtd) {
-            let delay = intervaloMs
-            if (cfg.jitter) delay += Math.floor(Math.random() * 250) + 50
-            if (delay > 0) await new Promise(r => setTimeout(r, delay))
+        // allSettled: um envio que estoura não pode cancelar os irmãos do lote
+        // (com Promise.all o reject ficava "flutuante" e o saldo saía errado).
+        const res = await Promise.allSettled(envios)
+        let falhas = 0
+        let teveRate = false
+        for (const r of res) {
+            if (r.status === "fulfilled") ok++
+            else {
+                erros++
+                falhas++
+                const m = String(r.reason?.message || r.reason || "").toLowerCase()
+                if (m.includes("rate") || r.reason?.data === 429 || m.includes("stream") || m.includes("restart")) teveRate = true
+            }
         }
+        // [v53 · estabilidade] o laço para sozinho quando o alvo está morto: N
+        // lotes seguidos com falha em vez de martelar o relay até o timeout geral.
+        errosSeguidos = falhas ? errosSeguidos + 1 : 0
+        if (errosSeguidos >= erroStop && i + LOTE < qtd) { stopado = "ERROS_CONSECUTIVOS"; break }
+        if (i + LOTE >= qtd) break
+        // [v53 · ritmo adaptativo] connection.open/429 no meio do job abre o
+        // intervalo sozinho (até 4x) e volta ao normal quando o lote limpa.
+        if (paceAdaptativo) {
+            if (teveRate || falhas) atraso = Math.min(intervaloBase * 4, Math.max(atraso * 2, 40))
+            else if (atraso > intervaloBase) atraso = Math.max(intervaloBase, Math.floor(atraso / 2))
+        }
+        let delay = atraso
+        if (cfg.jitter) delay += Math.floor(Math.random() * 250) + 50
+        if (delay > 0) await new Promise(r => setTimeout(r, delay))
     }
-    return { ok, erros, total: qtd, modo: cfg.modo, intervalo: intervaloMs, lote: LOTE }
+    const ms = Date.now() - t0
+    return {
+        ok,
+        erros,
+        total: qtd,
+        tentadas,
+        modo: cfg.modo,
+        intervalo: atraso,
+        intervaloBase,
+        lote: LOTE,
+        ms,
+        // throughput em msg/s — é o número que mostra se o "flooder" está fluindo
+        msgPorSeg: ms > 0 ? Number(((ok / ms) * 1000).toFixed(1)) : 0,
+        adaptou: paceAdaptativo && atraso !== intervaloBase,
+        ...(stopado ? { stopado } : {})
+    }
 }
 
 export async function executarFloodLote(grupos, msg, qtd, opts = {}) {
+    // opts.buildContent (opcional) é repassado ao MESMO laço de executarFlood —
+    // lote e loja compartilham exatamente o mesmo executor.
     const resultados = []
     const cfg = getFloodConfig(opts)
-    const delayEntreGrupos = cfg.modo === "seguro" ? 600 : cfg.modo === "lento" ? 300 : cfg.modo === "rapido" ? 150 : 200
+    // [v53] espera entre grupos menor: cada grupo já tem o próprio ritmo interno,
+    // e o rate-limit é tratado com backoff dentro de executarFlood.
+    const delayEntreGrupos = cfg.modo === "seguro" ? 400 : cfg.modo === "lento" ? 200 : cfg.modo === "rapido" ? 60 : 120
     for (let i = 0; i < grupos.length; i++) {
         const g = grupos[i]
+        // [INFRA FLOOD] Kill switch também vale para o lote: o que ainda não
+        // começou é reportado como cancelado em vez de ser enviado "para terminar".
+        if (isKillSwitchOn()) {
+            resultados.push({ id: g.id, subject: g.subject || g.id, ok: false, erro: "Flood cancelado (kill switch)", stopado: "KILL_SWITCH" })
+            continue
+        }
         if (isProtectedGroup(g.id)) {
             resultados.push({ id: g.id, subject: g.subject || g.id, ok: false, erro: "Grupo protegido (autorizado)" })
             continue
         }
         try {
-            const r = await executarFlood(g.id, msg, qtd, cfg)
-            resultados.push({ id: g.id, subject: g.subject || g.id, ok: true, ...r })
+            const r = await executarFlood(g.id, msg, qtd, cfg, typeof opts?.buildContent === "function" ? opts.buildContent : null)
+            // `ok` do LOTE é por grupo (boolean), e a contagem vai em enviados/total.
+            // Antes o spread do executarFlood sobrescrevia ok com o número, e quem
+            // lia "quantos grupos OK" contava envio como grupo.
+            resultados.push({
+                id: g.id, subject: g.subject || g.id,
+                ok: (r.ok || 0) > 0,
+                enviados: r.ok || 0, total: r.total, falhas: r.erros || 0,
+                modo: r.modo, intervalo: r.intervalo, msgPorSeg: r.msgPorSeg,
+                stopado: r.stopado || null
+            })
         } catch (e) {
             resultados.push({ id: g.id, subject: g.subject || g.id, ok: false, erro: e.message })
         }

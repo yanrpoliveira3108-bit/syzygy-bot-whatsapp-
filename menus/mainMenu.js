@@ -5,42 +5,52 @@ import fs from "fs"
 import { getSock, rt } from "../connection/socket.js"
 import { normalizeNumber, getOwnerNumber } from "../utils/permissions.js"
 import { formatUptime, ok, err, warn, info } from "../utils/terminalUI.js"
-import { CONFIG, MENU_IMAGE_PATH, FLOOD_MODOS, uiModoEfetivo } from "../utils/config.js"
+import { CONFIG, MENU_IMAGE_PATH, FLOOD_MODOS, FLOOD_TIPOS_LABEL, uiModoEfetivo, floodMaxEfetivo } from "../utils/config.js"
+import { moldura, separador, opcao, bloco, rodape, LOGO, LOGO_PRINCIPAL, LOGO_ASSINATURA } from "../utils/menuArt.js"
 import { safeSendMessage } from "../services/groupService.js"
 
 const OWNER_NAME = "NYX"
 
-function menuTextoNumerico({ pushname, num, date, hora, uptime, ping, saude, ram, grupos, floodModo }) {
-    const modoInfo = FLOOD_MODOS[floodModo] ? `${FLOOD_MODOS[floodModo].intervalo}ms/l${FLOOD_MODOS[floodModo].lote}` : floodModo
-    return `╭━━「 ⚡ 𝗦𝗬𝗭𝗬𝗚𝗬 」━━━━━━━╮\n` +
-           `┃      painel administrativo     ⚡\n` +
-           `╰━━━━━━━━━━━━━━━━━━━━━━━╯\n` +
-           `╭─〔 👤 𝗦𝗘𝗦𝗦𝗔𝗢 〕────────────\n` +
-           `┃ 👤 Dono   ⬦ ${pushname}\n` +
-           `┃ 📞 Num    ⬦ ${num}\n` +
-           `┃ 📆 Data   ⬦ ${date} · ${hora}\n` +
-           `┃ ⏱️ Up     ⬦ ${uptime} · 🏓 ${ping}ms\n` +
-           `┃ ${saude.icone} Saúde   ⬦ ${saude.texto}\n` +
-           `┃ 🧠 RAM    ⬦ ${ram}\n` +
-           `┃ 👥 Grupos ⬦ ${grupos}\n` +
-           `┃ 🌊 Flood  ⬦ ${floodModo} ${modoInfo}\n` +
-           `╰────────────────────────\n` +
-           `╭─〔 ⚔️ 𝗔𝗧𝗔𝗤𝗨𝗘 & 𝗚𝗥𝗨𝗣𝗢𝗦 〕───────\n` +
-           `┃ ⬥ 1 · 📋 Listar Grupos\n` +
-           `┃ ⬥ 2 · 🌊 FLOOD\n` +
-           `┃ ⬥ 3 · 💣 Preset + NUKE\n` +
-           `┃ ⬥ 4 · 👑 Roubar Grupo\n` +
-           `╰────────────────────────\n` +
-           `╭─〔 🧰 𝗣𝗔𝗜𝗡𝗘𝗟 〕──────────────\n` +
-           `┃ ⬥ 5 · 👑 Comandos do Dono\n` +
-           `┃ ⬥ 6 · ⚙️ Configurações\n` +
-           `┃ ⬥ 7 · 🫥 Status Manager\n` +
-           `┃ ⬥ 8 · 🔢 Multi (Lote)\n` +
-           `┃ ⬥ 0 · 🚪 Sair\n` +
-           `╰────────────────────────\n` +
-           `_Digite o número da opção_\n` +
-           `▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n` +
-           `⚔️ SYZYGY · NYX`
+/** Resumo do alvo selecionado (lido da feature; nunca quebra o menu se falhar). */
+function alvosResumo() {
+    try {
+        const n = (rt().floodSelectionGlobal || []).length
+        const porDono = rt().floodSelection || {}
+        const total = n || Object.values(porDono).reduce((a, v) => a + (Array.isArray(v) ? v.length : 0), 0)
+        return total ? `${total} alvo(s) selecionado(s)` : "sem alvo (2 → 36)"
+    } catch { return "sem alvo" }
+}
+
+function menuTextoNumerico({ pushname, num, date, hora, uptime, ping, saude, ram, grupos, floodModo, floodTipo, kill, alvos }) {
+    const mi = FLOOD_MODOS[floodModo]
+    const modoInfo = mi ? `${mi.intervalo}ms/l${mi.lote}` : floodModo
+    return [
+        moldura(`${LOGO_PRINCIPAL} · ⚡ painel administrativo`, { largura: 27, enfeite: "༺༻" }),
+        bloco("👤 SESSÃO", { largura: 26 }),
+        `┃ 👤 Dono   ⬦ ${pushname}`,
+        `┃ 📞 Num    ⬦ ${num}`,
+        `┃ 📆 Data   ⬦ ${date} · ${hora}`,
+        `┃ ⏱️ Up     ⬦ ${uptime} · 🏓 ${ping}ms`,
+        `┃ ${saude.icone} Saúde   ⬦ ${saude.texto}`,
+        `┃ 🧠 RAM    ⬦ ${ram}`,
+        `┃ 👥 Grupos ⬦ ${grupos}`,
+        `┃ 🌊 Flood  ⬦ ${floodModo} ${modoInfo} · ${floodTipo || "📝 texto"} · teto ${floodMaxEfetivo()}`,
+        `┃ ${kill ? "🛑 Flood  ⬦ BLOQUEADO (kill switch)" : "▶️ Flood  ⬦ liberado · " + (alvos || "sem alvo")}`,
+        separador(12, "flores"),
+        bloco("⚔️ ATACAR", { largura: 26 }),
+        opcao("1", "📋 Listar Grupos"),
+        opcao("2", "🌊 FLOOD", "texto ou 💳 pagamento"),
+        opcao("3", "💣 Preset + NUKE"),
+        opcao("4", "👑 Roubar Grupo"),
+        bloco("🧰 PAINEL", { largura: 26 }),
+        opcao("5", "👑 Comandos do Dono"),
+        opcao("6", "⚙️ Configurações"),
+        opcao("7", "🫥 Status Manager"),
+        opcao("8", "🔢 Multi (Lote)"),
+        opcao("0", "🚪 Sair"),
+        rodape({ dica: "ou digite direto: 2/01/Oi/20/1 · pagamento · floodalvos" }),
+        `▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n${LOGO_ASSINATURA}`
+    ].join("\n")
 }
 
 export async function enviarPainelInicial(from) {
@@ -71,7 +81,10 @@ export async function enviarPainelInicial(from) {
             const corpo = menuTextoNumerico({
                 pushname: OWNER_NAME, num: _num, date: _date, hora: _hora, uptime: _uptime,
                 ping, saude, ram, grupos,
-                floodModo: CONFIG.floodModo || "normal"
+                floodModo: CONFIG.floodModo || "normal",
+                floodTipo: FLOOD_TIPOS_LABEL[CONFIG.floodTipo] || "📝 texto puro",
+                kill: CONFIG.floodKillSwitch === true,
+                alvos: alvosResumo()
             })
             // [v43] Imagem do menu AGORA SEMPRE anexa (PV e grupo) — antes só PV.
             const pathImg = CONFIG.menuImage || MENU_IMAGE_PATH
@@ -122,7 +135,10 @@ export async function enviarPainelInicial(from) {
             const corpo = menuTextoNumerico({
                 pushname: OWNER_NAME, num: _num, date: _date, hora: _hora, uptime: _uptime,
                 ping, saude, ram, grupos,
-                floodModo: CONFIG.floodModo || "normal"
+                floodModo: CONFIG.floodModo || "normal",
+                floodTipo: FLOOD_TIPOS_LABEL[CONFIG.floodTipo] || "📝 texto puro",
+                kill: CONFIG.floodKillSwitch === true,
+                alvos: alvosResumo()
             })
             try { await safeSendMessage(from, { text: corpo }, 0) } catch {}
             return

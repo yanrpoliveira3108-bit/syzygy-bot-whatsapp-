@@ -7,10 +7,23 @@ import path from "path"
 
 import { getSock, rt } from "../connection/socket.js"
 import { setState, clearState, getState } from "../utils/stateManager.js"
-import { CONFIG, MENU_IMAGE_PATH, MAX_FLOOD, salvarConfig, FLOOD_MODOS } from "../utils/config.js"
+import { CONFIG, MENU_IMAGE_PATH, salvarConfig, FLOOD_MODOS } from "../utils/config.js"
 import { info, ok, warn } from "../utils/terminalUI.js"
 import { isOwner } from "../utils/permissions.js"
 import { STATUS_MENU_MAP } from "../features/statusManager/index.js"
+// [FLOOD · v53] TIPO de conteúdo do flood (texto | pagamento). Só conteúdo e
+// validação: laço, fila, throttle e permissões continuam sendo os do flood
+// existente — não existe segundo executor nem fila de pagamento.
+import {
+    floodContentBuilderFor,
+    setFloodSelection,
+    getFloodSelection,
+    clearFloodSelection,
+    resumoAlvosTexto,
+    detectPaymentTrigger,
+    resolvePaymentContent
+} from "../features/flood/index.js"
+import { floodMaxEfetivo, FLOOD_TIPOS } from "../utils/config.js"
 
 import {
     alterarNomeGrupo, alterarBioGrupo,
@@ -123,7 +136,7 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         }
         if (!st.avisouConfig) {
             setState(ownerKey, { action: "config_menu", avisouConfig: true })
-            await sock.sendMessage(chatJid, { text: "⚠️ Opção inválida. Digite 1-11 (config), 12-35 (dono) ou 0 = voltar (cancelar = sair)." })
+            await sock.sendMessage(chatJid, { text: "⚠️ Opção inválida. Digite 1-11 (config), 12-41 (dono — 35-40 são os controles do flood) ou 0 = voltar (cancelar = sair)." })
         }
         return true
     }
@@ -193,20 +206,112 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         return true
     }
 
-    // Flood single - mensagem
+    // Flood single - TIPO do conteúdo (v53): 📝 texto ou 💳 pagamento. É um passo a
+    // mais NO MESMO wizard (grupo → tipo → conteúdo → qtd → modo → send); depois do
+    // tipo, cada linha abaixo é o flood clássico de sempre.
+    if (st.action === "waiting_flood_tipo" && text) {
+        const raw = text.trim().toLowerCase()
+        const ehPag = ["2", "payment", "pagamento", "pay", "💳"].includes(raw)
+        const ehTexto = ["1", "texto", "text", "📝", "puro"].includes(raw)
+        if (!ehPag && !ehTexto) {
+            await enviarCancelavel(chatJid, `⚠️ não entendi o tipo.\n\n1 · 📝 texto\n2 · 💳 pagamento\n\n(cancelar para sair)`)
+            return true
+        }
+        const grupo = st.selectedGroup || { subject: "?" }
+        setState(ownerKey, {
+            action: "waiting_flood_message",
+            groupJid: st.groupJid,
+            selectedGroup: st.selectedGroup,
+            floodTipo: ehPag ? FLOOD_TIPOS.PAGAMENTO : FLOOD_TIPOS.TEXTO
+        })
+        await enviarCancelavel(chatJid, ehPag
+            ? `💳 FLOOD · PAGAMENTO\nGrupo: ${grupo.subject}\n\n1º) texto da cobrança (vira a nota do pagamento).\nDepois eu pergunto valor, moeda, quantidade e modo.\n\nex.: Pagamento do pedido`
+            : `📝 FLOOD · TEXTO\nGrupo: ${grupo.subject}\n\nDigite a mensagem (1 linha):`)
+        return true
+    }
+
+    // Flood single - conteúdo (📝 texto | 💳 nota da cobrança)
     if (st.action === "waiting_flood_message" && text) {
-        setState(ownerKey, { action: "waiting_flood_amount", groupJid: st.groupJid, floodMessage: text, selectedGroup: st.selectedGroup })
-        await enviarCancelavel(chatJid, `Digite a *quantidade* (máx ${MAX_FLOOD}):`)
+        // atalho do mesmo tipo: "pag:nota|valor|moeda" resolve o pagamento numa
+        // linha só, sem passar pelos passos de valor/moeda. Continua sendo o MESMO
+        // executarFlood — só pula perguntas.
+        const gatilho = detectPaymentTrigger(text)
+        if (gatilho.isPayment) {
+            const r = resolvePaymentContent(gatilho.rest)
+            if (!r.ok) {
+                if (!st.avisouPag) { setState(ownerKey, { ...st, avisouPag: true }); await enviarCancelavel(chatJid, `⚠️ ${r.error}\n${r.usage}`) }
+                else await sock.sendMessage(chatJid, { text: `⚠️ ${r.error}` })
+                return true
+            }
+            setState(ownerKey, {
+                action: "waiting_flood_amount", groupJid: st.groupJid, selectedGroup: st.selectedGroup,
+                floodMessage: r.content.text, floodTipo: FLOOD_TIPOS.PAGAMENTO, floodContent: r.content
+            })
+            await enviarCancelavel(chatJid, `${r.summary}\n\nQuantidade (máx ${floodMaxEfetivo()}):`)
+            return true
+        }
+        if (st.floodTipo === FLOOD_TIPOS.PAGAMENTO) {
+            // 💳 pagamento: o que o dono digita aqui é a NOTA; valor e moeda vêm em
+            // seguida. Nada de gatilho de sintaxe ("loja:" etc.): o tipo é escolha de
+            // menu, não parsing de mensagem.
+            const nota = text.trim().replace(/\s+/g, " ").slice(0, 120)
+            if (!nota) { await sock.sendMessage(chatJid, { text: "⚠️ nota vazia — digite o texto da cobrança." }); return true }
+            setState(ownerKey, { ...st, floodMessage: nota, action: "waiting_payment_valor" })
+            await enviarCancelavel(chatJid, `💳 nota: ${nota}\n\nValor? (ex.: 25,90 · R$ 25.90 · 100)`)
+            return true
+        }
+        setState(ownerKey, {
+            action: "waiting_flood_amount", groupJid: st.groupJid, selectedGroup: st.selectedGroup,
+            floodMessage: text, floodTipo: st.floodTipo || FLOOD_TIPOS.TEXTO
+        })
+        await enviarCancelavel(chatJid, `Digite a *quantidade* (máx ${floodMaxEfetivo()}):`)
         return true
     }
-    // Flood single - quantidade -> vai para escolha de modo (ondas)
+
+    // 💳 Flood single - valor e moeda da cobrança (dois passos, mesmo estado)
+    if (st.action === "waiting_payment_valor" && text) {
+        const { parseAmount } = await import("../features/flood/payment.js")
+        const r = parseAmount(text.trim())
+        if (!r.ok) {
+            await sock.sendMessage(chatJid, { text: `⚠️ ${r.error}\n${r.usage || "ex.: 25,90 · R$ 25.90 · 100"}` })
+            return true
+        }
+        setState(ownerKey, { ...st, floodPaymentAmount: r.value })
+        await enviarCancelavel(chatJid, `💳 valor: ${r.value.toFixed(2)}\n\nMoeda?\n  1 · BRL (padrão)\n  2 · USD\n  3 · EUR\n\nou digite a sigla`)
+        return true
+    }
+    if (st.action === "waiting_payment_moeda" && text) {
+        const { parseCurrency } = await import("../features/flood/payment.js")
+        const raw = text.trim().toLowerCase()
+        const atalho = { "1": "BRL", "2": "USD", "3": "EUR" }[raw]
+        const r = parseCurrency(atalho || raw)
+        if (!r.ok) {
+            await sock.sendMessage(chatJid, { text: `⚠️ ${r.error}\n${r.usage || "BRL · USD · EUR"}` })
+            return true
+        }
+        setState(ownerKey, {
+            action: "waiting_flood_amount", groupJid: st.groupJid, selectedGroup: st.selectedGroup,
+            floodMessage: st.floodMessage, floodTipo: FLOOD_TIPOS.PAGAMENTO,
+            floodContent: {
+                type: "payment", text: st.floodMessage,
+                amount: st.floodPaymentAmount, currency: r.value
+            }
+        })
+        await enviarCancelavel(chatJid, `💳 *pagamento pronto*\nnota: ${st.floodMessage}\nvalor: ${Number(st.floodPaymentAmount).toFixed(2)} ${r.value}\n\nQuantidade de envios (máx ${floodMaxEfetivo()}):`)
+        return true
+    }
+
+    // Flood single - quantidade -> escolha de modo (ondas)
     if (st.action === "waiting_flood_amount" && text) {
+        const teto = floodMaxEfetivo()
         const qtd = parseInt(text.replace(/\D/g, ""))
-        if (isNaN(qtd) || qtd < 1) { await sock.sendMessage(chatJid, { text: "Quantidade invalida." }); return true }
-        const q = Math.min(qtd, MAX_FLOOD)
-        await enviarMenuFloodModos(chatJid, ownerKey, { qtd: q, groupJid: st.groupJid, floodMessage: st.floodMessage })
+        if (isNaN(qtd) || qtd < 1) { await sock.sendMessage(chatJid, { text: `Quantidade inválida. Use 1-${teto}.` }); return true }
+        if (qtd > teto) await sock.sendMessage(chatJid, { text: `⚠️ ${qtd} passa o teto do config (${teto}) — usando ${teto}.` })
+        const q = Math.min(qtd, teto)
+        await enviarMenuFloodModos(chatJid, ownerKey, { qtd: q, groupJid: st.groupJid, selectedGroup: st.selectedGroup, floodMessage: st.floodMessage, floodTipo: st.floodTipo, floodContent: st.floodContent })
         return true
     }
+
     // Flood single - modo
     if (st.action === "waiting_flood_modo" && text) {
         const raw = text.trim().toLowerCase()
@@ -228,14 +333,26 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
             }
         }
         clearState(ownerKey)
+        // [v53] TIPO de conteúdo: o MESMO executarFlood, com um builder por iteração
+        // vindo do preset do tipo. floodTipo ausente/texto → comportamento idêntico
+        // ao de sempre ({ text: corpo }). Não existe executor de pagamento.
+        const ehPagamento = st.floodTipo === FLOOD_TIPOS.PAGAMENTO && !!st.floodContent
         let msgFlood = st.floodMessage
-        if (CONFIG.linkDivulgacao) msgFlood += `\n${CONFIG.linkDivulgacao}`
-        await sock.sendMessage(chatJid, { text: `Enviando ${st.floodQtd} msgs em modo ${cfg.modo} (${cfg.intervalo}ms/lote${cfg.lote})...` })
+        // Link de divulgação só entra no texto: a nota do requestPaymentMessage é
+        // dado do payload, e o hook global de "Ler Mais" (connection/socket.js)
+        // enche de U+034F o que é multi-linha — não se emenda rodapé em cobrança.
+        if (CONFIG.linkDivulgacao && !ehPagamento) msgFlood += `\n${CONFIG.linkDivulgacao}`
+        const builder = ehPagamento
+            ? floodContentBuilderFor({ floodTipo: "payment", floodContent: st.floodContent, floodFrom: sock?.user?.id })
+            : null
+        const modoTxt = `\n${cfg.modo} · ${cfg.intervalo}ms/lote${cfg.lote}${cfg.jitter ? " +jitter" : ""}`
+        await sock.sendMessage(chatJid, { text: `🌊 Enviando ${st.floodQtd} msg(s) em 1 grupo...${modoTxt}${ehPagamento ? `\n💳 ${st.floodContent.currency} ${Number(st.floodContent.amount).toFixed(2)} · nota: ${st.floodContent.text}` : ""}` })
         try {
-            const r = await executarFlood(st.groupJid, msgFlood, st.floodQtd, cfg)
+            const r = await executarFlood(st.groupJid, msgFlood, st.floodQtd, cfg, builder)
             const { registrarAcao } = await import("../services/historicoService.js")
-            registrarAcao("flood", { id: st.groupJid, subject: st.selectedGroup?.subject || st.groupJid, qtd: r.total, modo: r.modo, ok: r.ok })
-            await enviarVoltar(chatJid, `Flood finalizado.\nModo: ${r.modo} | ${r.intervalo}ms/lote${r.lote}\nEnviadas: ${r.ok}/${r.total}${r.erros ? `\nFalhas: ${r.erros}` : ""}`)
+            registrarAcao("flood", { id: st.groupJid, subject: st.selectedGroup?.subject || st.groupJid, qtd: r.total, modo: r.modo, ok: r.ok, falhas: r.erros, stopado: r.stopado || null, tipo: ehPagamento ? "payment" : "text" })
+            let resFlood = `Flood finalizado.\nModo: ${r.modo} · ${r.intervalo}ms/lote${r.lote}\nEnviadas: ${r.ok}/${r.total}${r.erros ? `\nFalhas: ${r.erros}` : ""}${r.stopado ? `\n⛔ interrompido: ${r.stopado}` : ""}`
+            await enviarVoltar(chatJid, resFlood)
         } catch (e) { await enviarVoltar(chatJid, `Erro: ${e.message}`) }
         return true
     }
@@ -534,7 +651,7 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         const raw = text.trim()
         const escolha = raw.replace(/\D/g, "")
         const grupo = st.selectedGroup || { id: st.groupJid, subject: "?", isAdmin: false }
-        if (escolha === "1") { await processarSelecaoGrupo(chatJid, ownerKey, "waiting_flood_message", grupo); return true }
+        if (escolha === "1") { await processarSelecaoGrupo(chatJid, ownerKey, "waiting_flood_tipo", grupo); return true }
         if (escolha === "2") { await processarSelecaoGrupo(chatJid, ownerKey, "waiting_tudo_name", grupo); return true }
         if (escolha === "3") { await processarSelecaoGrupo(chatJid, ownerKey, "roubar_grupo", grupo); return true }
         if (escolha === "4") {
@@ -557,8 +674,8 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         const grupos = st.multiGroups || []
         if (!grupos.length) { clearState(ownerKey); await enviarVoltar(chatJid, "Seleção expirada."); return true }
         if (escolha === "1") {
-            setState(ownerKey, { action: "multi_flood_message", multiGroups: grupos })
-            await enviarCancelavel(chatJid, `Digite a mensagem para FLOOD em ${grupos.length} grupos:`)
+            setState(ownerKey, { action: "multi_flood_tipo", multiGroups: grupos })
+            await enviarCancelavel(chatJid, `🌊 FLOOD EM LOTE · ${grupos.length} grupos\n\nQue tipo de conteúdo?\n  1 · 📝 texto\n  2 · 💳 pagamento\n\n(cancelar para sair)`)
             return true
         }
         if (escolha === "2") {
@@ -595,17 +712,72 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         return true
     }
 
-    // Multi flood
+    // Multi flood — mesmo wizard do single, com o plural no lugar certo.
+    if (st.action === "multi_flood_tipo" && text) {
+        const raw = text.trim().toLowerCase()
+        const ehPag = ["2", "payment", "pagamento", "pay", "💳"].includes(raw)
+        const ehTexto = ["1", "texto", "text", "📝", "puro"].includes(raw)
+        if (!ehPag && !ehTexto) {
+            await enviarCancelavel(chatJid, `⚠️ não entendi o tipo.\n\n1 · 📝 texto\n2 · 💳 pagamento\n\n(cancelar para sair)`)
+            return true
+        }
+        setState(ownerKey, { action: "multi_flood_message", multiGroups: st.multiGroups, floodTipo: ehPag ? FLOOD_TIPOS.PAGAMENTO : FLOOD_TIPOS.TEXTO })
+        await enviarCancelavel(chatJid, ehPag
+            ? `💳 FLOOD · PAGAMENTO\n${st.multiGroups.length} grupos\n\n1º) texto da cobrança (nota do pagamento)\nDepois: valor, moeda, quantidade e modo.`
+            : `📝 FLOOD · TEXTO\n${st.multiGroups.length} grupos\n\nDigite a mensagem (1 linha):`)
+        return true
+    }
     if (st.action === "multi_flood_message" && text) {
-        setState(ownerKey, { action: "multi_flood_amount", multiGroups: st.multiGroups, floodMessage: text })
-        await enviarCancelavel(chatJid, `Qtd para ${st.multiGroups.length} grupos (máx ${MAX_FLOOD} cada):`)
+        const gatilho = detectPaymentTrigger(text)
+        if (gatilho.isPayment) {
+            const r = resolvePaymentContent(gatilho.rest)
+            if (!r.ok) { await enviarCancelavel(chatJid, `⚠️ ${r.error}\n${r.usage}`); return true }
+            setState(ownerKey, {
+                action: "multi_flood_amount", multiGroups: st.multiGroups,
+                floodMessage: r.content.text, floodTipo: FLOOD_TIPOS.PAGAMENTO, floodContent: r.content
+            })
+            await enviarCancelavel(chatJid, `${r.summary} · ${st.multiGroups.length} grupos\n\nQtd para cada grupo (máx ${floodMaxEfetivo()}):`)
+            return true
+        }
+        if (st.floodTipo === FLOOD_TIPOS.PAGAMENTO) {
+            const nota = text.trim().replace(/\s+/g, " ").slice(0, 120)
+            if (!nota) { await sock.sendMessage(chatJid, { text: "⚠️ nota vazia — digite o texto da cobrança." }); return true }
+            setState(ownerKey, { ...st, floodMessage: nota, action: "multi_payment_valor" })
+            await enviarCancelavel(chatJid, `💳 nota: ${nota}\n\nValor? (ex.: 25,90 · R$ 25.90 · 100)`)
+            return true
+        }
+        setState(ownerKey, { action: "multi_flood_amount", multiGroups: st.multiGroups, floodMessage: text, floodTipo: st.floodTipo || FLOOD_TIPOS.TEXTO })
+        await enviarCancelavel(chatJid, `Qtd para ${st.multiGroups.length} grupos (máx ${floodMaxEfetivo()} cada):`)
+        return true
+    }
+    if (st.action === "multi_payment_valor" && text) {
+        const { parseAmount } = await import("../features/flood/payment.js")
+        const r = parseAmount(text.trim())
+        if (!r.ok) { await sock.sendMessage(chatJid, { text: `⚠️ ${r.error}\n${r.usage || "ex.: 25,90 · R$ 25.90"}` }); return true }
+        setState(ownerKey, { ...st, floodPaymentAmount: r.value })
+        await enviarCancelavel(chatJid, `💳 valor: ${r.value.toFixed(2)}\n\nMoeda?\n  1 · BRL (padrão)\n  2 · USD\n  3 · EUR\n\nou digite a sigla`)
+        return true
+    }
+    if (st.action === "multi_payment_moeda" && text) {
+        const { parseCurrency } = await import("../features/flood/payment.js")
+        const raw = text.trim().toLowerCase()
+        const r = parseCurrency({ "1": "BRL", "2": "USD", "3": "EUR" }[raw] || raw)
+        if (!r.ok) { await sock.sendMessage(chatJid, { text: `⚠️ ${r.error}\n${r.usage || "BRL · USD · EUR"}` }); return true }
+        setState(ownerKey, {
+            action: "multi_flood_amount", multiGroups: st.multiGroups, floodMessage: st.floodMessage,
+            floodTipo: FLOOD_TIPOS.PAGAMENTO,
+            floodContent: { type: "payment", text: st.floodMessage, amount: st.floodPaymentAmount, currency: r.value }
+        })
+        await enviarCancelavel(chatJid, `💳 *pagamento pronto*\nnota: ${st.floodMessage} · ${Number(st.floodPaymentAmount).toFixed(2)} ${r.value}\n\nQtd para ${st.multiGroups.length} grupos (máx ${floodMaxEfetivo()} cada):`)
         return true
     }
     if (st.action === "multi_flood_amount" && text) {
+        const teto = floodMaxEfetivo()
         const qtd = parseInt(text.replace(/\D/g, ""))
-        if (isNaN(qtd) || qtd < 1) { await sock.sendMessage(chatJid, { text: "Quantidade invalida." }); return true }
-        const q = Math.min(qtd, MAX_FLOOD)
-        await enviarMenuFloodModos(chatJid, ownerKey, { qtd: q, multiGroups: st.multiGroups, floodMessage: st.floodMessage, multi: true })
+        if (isNaN(qtd) || qtd < 1) { await sock.sendMessage(chatJid, { text: `Quantidade inválida. Use 1-${teto}.` }); return true }
+        if (qtd > teto) await sock.sendMessage(chatJid, { text: `⚠️ ${qtd} passa o teto do config (${teto}) — usando ${teto}.` })
+        const q = Math.min(qtd, teto)
+        await enviarMenuFloodModos(chatJid, ownerKey, { qtd: q, multiGroups: st.multiGroups, floodMessage: st.floodMessage, multi: true, floodTipo: st.floodTipo, floodContent: st.floodContent })
         return true
     }
     if (st.action === "multi_flood_modo" && text) {
@@ -629,16 +801,22 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         }
         const grupos = st.multiGroups
         clearState(ownerKey)
+        const ehPagamento = st.floodTipo === FLOOD_TIPOS.PAGAMENTO && !!st.floodContent
         let msgFlood = st.floodMessage
-        if (CONFIG.linkDivulgacao) msgFlood += `\n${CONFIG.linkDivulgacao}`
-        await sock.sendMessage(chatJid, { text: `Flood em lote: ${grupos.length} grupos, ${st.floodQtd} msgs cada, modo ${cfg.modo}...` })
+        if (CONFIG.linkDivulgacao && !ehPagamento) msgFlood += `\n${CONFIG.linkDivulgacao}`
+        const builderLote = ehPagamento
+            ? floodContentBuilderFor({ floodTipo: "payment", floodContent: st.floodContent, floodFrom: sock?.user?.id })
+            : null
+        await sock.sendMessage(chatJid, { text: `🌊 Flood em lote: ${grupos.length} grupos · ${st.floodQtd} msg(s) cada · modo ${cfg.modo}...${ehPagamento ? `\n💳 ${st.floodContent.currency} ${Number(st.floodContent.amount).toFixed(2)}` : ""}` })
         try {
-            const resultados = await executarFloodLote(grupos, msgFlood, st.floodQtd, cfg)
+            const resultados = await executarFloodLote(grupos, msgFlood, st.floodQtd, builderLote ? { ...cfg, buildContent: builderLote } : cfg)
             const okG = resultados.filter(r => r.ok).length
             const { registrarAcao } = await import("../services/historicoService.js")
-            registrarAcao("flood_lote", { grupos: grupos.length, qtd: st.floodQtd, modo: cfg.modo, okGrupos: okG })
+            registrarAcao("flood_lote", { grupos: grupos.length, qtd: st.floodQtd, modo: cfg.modo, okGrupos: okG, tipo: ehPagamento ? "payment" : "text" })
             let txt = `Flood lote finalizado: ${okG}/${grupos.length} grupos OK\n`
-            resultados.slice(0, 10).forEach(r => { txt += `${r.ok ? "✅" : "❌"} ${r.subject}: ${r.ok ? `${r.ok}/${r.total}` : r.erro}\n` })
+            resultados.slice(0, 10).forEach(r => {
+                txt += `${r.ok ? "✅" : "❌"} ${r.subject}: ${r.ok ? `${r.enviados}/${r.total} msg${r.falhas ? ` · ${r.falhas} falha(s)` : ""}${r.stopado ? ` · ⛔ ${r.stopado}` : ""}` : r.erro}\n`
+            })
             if (resultados.length > 10) txt += `... +${resultados.length - 10} outros\n`
             await enviarVoltar(chatJid, txt)
         } catch (e) { await enviarVoltar(chatJid, `Erro: ${e.message}`) }
@@ -752,17 +930,17 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
 
     if (st.action === "agendar_flood_message" && text) {
         setState(ownerKey, { action: "agendar_flood_amount", groupJid: st.groupJid, selectedGroup: st.selectedGroup, floodMessage: text })
-        await enviarCancelavel(chatJid, `Qtd de mensagens (máx ${MAX_FLOOD}):`)
+        await enviarCancelavel(chatJid, `Qtd de mensagens (máx ${floodMaxEfetivo()}):`)
         return true
     }
     if (st.action === "agendar_flood_amount" && text) {
         const qtd = parseInt(text.replace(/\D/g, ""))
         if (isNaN(qtd) || qtd < 1) { await sock.sendMessage(chatJid, { text: "Qtd inválida." }); return true }
-        setState(ownerKey, { action: "agendar_flood_modo", groupJid: st.groupJid, selectedGroup: st.selectedGroup, floodMessage: st.floodMessage, floodQtd: Math.min(qtd, MAX_FLOOD) })
-        await enviarMenuFloodModos(chatJid, ownerKey, { qtd: Math.min(qtd, MAX_FLOOD), groupJid: st.groupJid, floodMessage: st.floodMessage })
+        setState(ownerKey, { action: "agendar_flood_modo", groupJid: st.groupJid, selectedGroup: st.selectedGroup, floodMessage: st.floodMessage, floodQtd: Math.min(qtd, floodMaxEfetivo()) })
+        await enviarMenuFloodModos(chatJid, ownerKey, { qtd: Math.min(qtd, floodMaxEfetivo()), groupJid: st.groupJid, floodMessage: st.floodMessage })
         // Reaproveita o handler de modo? Vamos tratar agendar_flood_modo separado
         // O estado já foi setado para agendar_flood_modo, mas enviarMenuFloodModos seta waiting_flood_modo. Corrige:
-        setState(ownerKey, { action: "agendar_flood_modo", groupJid: st.groupJid, selectedGroup: st.selectedGroup, floodMessage: st.floodMessage, floodQtd: Math.min(qtd, MAX_FLOOD) })
+        setState(ownerKey, { action: "agendar_flood_modo", groupJid: st.groupJid, selectedGroup: st.selectedGroup, floodMessage: st.floodMessage, floodQtd: Math.min(qtd, floodMaxEfetivo()) })
         return true
     }
     if (st.action === "agendar_flood_modo" && text) {
@@ -872,15 +1050,15 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
     }
     if (st.action === "multi_agendar_flood_message" && text) {
         setState(ownerKey, { action: "multi_agendar_flood_amount", multiGroups: st.multiGroups, floodMessage: text })
-        await enviarCancelavel(chatJid, `Qtd (máx ${MAX_FLOOD} cada):`)
+        await enviarCancelavel(chatJid, `Qtd (máx ${floodMaxEfetivo()} cada):`)
         return true
     }
     if (st.action === "multi_agendar_flood_amount" && text) {
         const qtd = parseInt(text.replace(/\D/g, ""))
         if (isNaN(qtd) || qtd < 1) { await sock.sendMessage(chatJid, { text: "Qtd inválida." }); return true }
-        setState(ownerKey, { action: "multi_agendar_flood_modo", multiGroups: st.multiGroups, floodMessage: st.floodMessage, floodQtd: Math.min(qtd, MAX_FLOOD) })
-        await enviarMenuFloodModos(chatJid, ownerKey, { qtd: Math.min(qtd, MAX_FLOOD), multiGroups: st.multiGroups, floodMessage: st.floodMessage, multi: true })
-        setState(ownerKey, { action: "multi_agendar_flood_modo", multiGroups: st.multiGroups, floodMessage: st.floodMessage, floodQtd: Math.min(qtd, MAX_FLOOD) })
+        setState(ownerKey, { action: "multi_agendar_flood_modo", multiGroups: st.multiGroups, floodMessage: st.floodMessage, floodQtd: Math.min(qtd, floodMaxEfetivo()) })
+        await enviarMenuFloodModos(chatJid, ownerKey, { qtd: Math.min(qtd, floodMaxEfetivo()), multiGroups: st.multiGroups, floodMessage: st.floodMessage, multi: true })
+        setState(ownerKey, { action: "multi_agendar_flood_modo", multiGroups: st.multiGroups, floodMessage: st.floodMessage, floodQtd: Math.min(qtd, floodMaxEfetivo()) })
         return true
     }
     if (st.action === "multi_agendar_flood_modo" && text) {
@@ -985,6 +1163,37 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         }
         clearState(ownerKey); return true
     }
+
+    // ══ [FLOOD v2] entradas dos controles 36-45 do painel do dono ═══════════
+    // Velocidade: usa resolveFloodSpeed() da feature (mesma fonte do overlay dos
+    // presets) e grava no config.json no FORMATO que o flood clássico já entende —
+    // modo "custom" vira intervalo explícito com o nome de modo anterior, porque
+    // FLOOD_MODOS não tem "custom" e getFloodConfig() cairia em normal.
+    if (st.action === "config_set_flood_speed" && text) {
+        const fx = await import("../features/flood/index.js")
+        const cfg = fx.resolveFloodSpeed(text.trim())
+        if (!cfg.ok) {
+            await sock.sendMessage(chatJid, { text: `⚠️ ${cfg.error} — use 1-4, o nome do modo, ou um intervalo em ms (${fx.CUSTOM_INTERVAL_MIN}–${fx.CUSTOM_INTERVAL_MAX}).\n\n${fx.formatFloodSpeedMenu()}` })
+            return true
+        }
+        const { FLOOD_MODOS } = await import("../utils/config.js")
+        if (cfg.modo === "custom" || !FLOOD_MODOS[cfg.modo]) {
+            CONFIG.floodModo = FLOOD_MODOS[CONFIG.floodModo] ? CONFIG.floodModo : "normal"
+        } else {
+            CONFIG.floodModo = cfg.modo
+        }
+        CONFIG.floodInterval = cfg.intervalo
+        CONFIG.floodLote = cfg.lote
+        CONFIG.floodJitter = !!cfg.jitter
+        salvarConfig()
+        await enviarVoltar(chatJid, `🌊 Velocidade: ${CONFIG.floodModo} · ${cfg.intervalo}ms/lote${cfg.lote}${cfg.jitter ? " + jitter" : ""} (fonte: ${cfg.from})\n\n_vale para o flood do wizard e como overlay dos presets_`)
+        clearState(ownerKey); return true
+    }
+
+    // [v53] Os handlers de allowlist (add/remove/pick) e o preview da loja saíram
+    // daqui junto com os conceitos: o alvo do flood é a seleção do operador
+    // (waiting_group + next:"waiting_flood_targets", resolvida adiante), e não há
+    // mais "preview" — o que se quer conferir é o raio-X do job (39).
 
     // [v24] Permissões - add/remove user
     if (st.action === "config_add_user" && text) {
@@ -1183,6 +1392,29 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
         const cacheKeys = Object.keys(cache).map(k => parseInt(k)).filter(k => !isNaN(k))
         const raw = text.trim()
 
+        // 🎯 36 · alvos do flood aceita dois atalhos além dos números: "todos" e
+        // "limpar". São atalhos de SELEÇÃO, não de autorização — grupos protegidos
+        // continuam sendo cortados por filterTargets().
+        if (st.next === "waiting_flood_targets") {
+            const baixo = raw.toLowerCase()
+            if (baixo === "limpar" || baixo === "reset" || baixo === "-") {
+                clearFloodSelection(ownerKey)
+                clearState(ownerKey)
+                await enviarVoltar(chatJid, "🧹 alvos do flood esvaziados — nenhum atalho de flood vai disparar até escolher de novo (36).")
+                return true
+            }
+            if (baixo === "todos" || baixo === "all" || baixo === "*") {
+                const { isAuthorizedGroup: isAuthAll } = await import("../utils/permissions.js")
+                const todas = Object.values(cache).filter(e => e && e.id && !isAuthAll(e.id)).map(e => e.id)
+                const sel = setFloodSelection(todas, { dono: ownerKey })
+                clearState(ownerKey)
+                await enviarVoltar(chatJid, sel.length
+                    ? `🎯 alvos do flood: TODOS os ${sel.length} grupos atacáveis do cache\n${resumoAlvosTexto(sel)}`
+                    : "⚠️ nenhum grupo atacável no cache (todos estão protegidos ou a lista está vazia).")
+                return true
+            }
+        }
+
         const pagMatch = raw.match(/^(?:pag|p)\s*(\d+)$/i)
         if (pagMatch) {
             const nPag = parseInt(pagMatch[1])
@@ -1208,9 +1440,15 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
                 return true
             }
             const alvoMulti = atacaveis.length < multi.entries.length ? atacaveis : multi.entries
-            if (st.next === "waiting_flood_message") {
-                setState(ownerKey, { action: "multi_flood_message", multiGroups: alvoMulti })
-                await enviarCancelavel(chatJid, `Multi FLOOD: ${alvoMulti.length} grupos\nDigite a mensagem:`)
+            if (st.next === "waiting_flood_message" || st.next === "waiting_flood_tipo") {
+                setState(ownerKey, { action: "multi_flood_tipo", multiGroups: alvoMulti })
+                await enviarCancelavel(chatJid, `🌊 Multi FLOOD: ${alvoMulti.length} grupos\n\nQue tipo de conteúdo?\n  1 · 📝 texto\n  2 · 💳 pagamento`)
+                return true
+            }
+            if (st.next === "waiting_flood_targets") {
+                const sel = setFloodSelection(alvoMulti.map(g => g.id), { dono: ownerKey })
+                clearState(ownerKey)
+                await enviarVoltar(chatJid, `🎯 alvos do flood salvos na sessão\n${resumoAlvosTexto(sel)}\n\nAgora: 2 · FLOOD (wizard) ou paymenttest / 2/preset/<id> (atalhos).\n_Nada foi enviado._`)
                 return true
             }
             if (st.next === "waiting_tudo_name") {
@@ -1250,6 +1488,13 @@ export async function handleEstado(chatJid, ownerKey, st, text, imgInfo, m) {
             return true
         }
         const { entry, selectedIdx } = res
+
+        if (st.next === "waiting_flood_targets") {
+            const sel = setFloodSelection([entry.id], { dono: ownerKey })
+            clearState(ownerKey)
+            await enviarVoltar(chatJid, `🎯 alvo do flood salvo na sessão\n${resumoAlvosTexto(sel)}\n\nAgora: 2 · FLOOD (wizard) ou paymenttest / 2/preset/<id>.\n_Nada foi enviado._`)
+            return true
+        }
 
         setState(ownerKey, {
             action: st.next,
@@ -1513,7 +1758,7 @@ export async function processarSelecaoGrupo(chatJid, ownerKey, next, entry) {
     // [v24] Blindagem: grupos autorizados não podem ser alvo de flood/nuke/roubar
     const { isAuthorizedGroup } = await import("../utils/permissions.js")
     const protegido = isAuthorizedGroup(entry.id)
-    if (protegido && ["waiting_flood_message", "waiting_tudo_name", "roubar_grupo", "confirm_nuke", "confirm_rmfoto"].includes(next)) {
+    if (protegido && ["waiting_flood_tipo", "waiting_flood_message", "waiting_tudo_name", "roubar_grupo", "confirm_nuke", "confirm_rmfoto"].includes(next)) {
         await sock.sendMessage(chatJid, { text: `🛡️ Grupo protegido (autorizado): ${entry.subject}\n\nEste grupo está blindado — não pode ser floodado, nukado ou roubado.\nRemova-o dos grupos autorizados (menu 5 > 27) se quiser atacar.` })
         clearState(ownerKey)
         const { enviarSubmenuConfig } = await import("../menus/configMenu.js")
@@ -1539,7 +1784,10 @@ export async function processarSelecaoGrupo(chatJid, ownerKey, next, entry) {
         waiting_both_name: `📝 Digite o nome (depois a bio):\n${entry.subject}`,
         waiting_group_image: `📷 Envie a imagem (foto ou documento).\nFormatos: JPG, PNG, WEBP.`,
         waiting_image_url: `🔗 Envie a URL direta da imagem:`,
-        waiting_flood_message: `Digite a mensagem:`
+        // Uma linha só de propósito: o hook global de "Ler Mais" dobra qualquer
+        // content.text multi-linha (e o dono não precisa disso num prompt de flood).
+        waiting_flood_tipo: `🌊 TIPO DO CONTEÚDO\n\n  1 · 📝 texto (flood clássico)\n  2 · 💳 pagamento (requestPaymentMessage do fork)\n\nDigite 1 ou 2 (cancelar para sair)`,
+        waiting_flood_message: `Digite a mensagem (1 linha).\n💳 atalho: pag:nota|25,90|BRL`,
     }
     if (map[next]) {
         setState(ownerKey, { action: next, groupJid: entry.id, selectedGroup: { id: entry.id, subject: entry.subject, isAdmin: entry.isAdmin } })

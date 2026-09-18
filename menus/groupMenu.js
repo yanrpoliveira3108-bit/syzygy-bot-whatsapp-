@@ -207,7 +207,15 @@ export async function enviarMenuFloodModos(jid, ownerKey, info = {}) {
     const { CONFIG, FLOOD_MODOS } = await import("../utils/config.js")
     const atual = CONFIG.floodModo || "normal"
     const qtd = info.qtd || "?"
+    // [v53] o modo controla SÓ a velocidade; o TIPO do conteúdo (📝 texto |
+    // 💳 pagamento) já foi decidido no passo anterior. Nada aqui muda executor,
+    // fila ou permissões.
+    const tipoConteudo = info.floodTipo || info.floodKind
+    const linhaTipo = tipoConteudo === "payment" || tipoConteudo === "pagamento"
+        ? `💳 TIPO: pagamento · ${info.floodContent?.currency || "BRL"} ${Number(info.floodContent?.amount || 0).toFixed(2)} · nota: ${info.floodContent?.text || "-"}\n`
+        : ``
     const texto = `🌊 FLOOD — MODO DE ENVIO\n` +
+                  `${linhaTipo}` +
                   `Qtd: ${qtd} msgs | Atual: ${atual}\n\n` +
                   `Escolha a velocidade:\n` +
                   `  1 · Rápido — ${FLOOD_MODOS.rapido.intervalo}ms / lote ${FLOOD_MODOS.rapido.lote} (arriscado)\n` +
@@ -220,9 +228,14 @@ export async function enviarMenuFloodModos(jid, ownerKey, info = {}) {
         setState(ownerKey, {
             action: info.multi ? "multi_flood_modo" : "waiting_flood_modo",
             groupJid: info.groupJid,
+            selectedGroup: info.selectedGroup || null,
             multiGroups: info.multiGroups,
             floodMessage: info.floodMessage,
-            floodQtd: qtd
+            floodQtd: qtd,
+            // [v53] o TIPO de conteúdo atravessa o passo de modo: é o mesmo estado
+            // do mesmo wizard — não uma fila nem um executor paralelo.
+            floodTipo: info.floodTipo || "texto",
+            floodContent: info.floodContent || null,
         })
     }
     await safeSendMessage(jid, { text: texto })

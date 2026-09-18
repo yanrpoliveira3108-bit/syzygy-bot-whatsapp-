@@ -26,7 +26,21 @@ export function uiModoEfetivo() {
     return m
 }
 
-export const MAX_FLOOD = 1000 // [v47] limite de flood por comando (era 100)
+// [v53] O teto do flood virou CONFIGURAÇÃO com teto duro: MAX_FLOOD é o default
+// (2000 por comando, era 1000) e config.json#floodMaxMensagens ajusta até
+// FLOOD_TETO_ABSOLUTO. Ler direto de MAX_FLOOD ainda funciona para quem não
+// mexeu no config; quem mexe usa floodMaxEfetivo() (única fonte com clamp).
+export const MAX_FLOOD = 2000
+export const FLOOD_TETO_ABSOLUTO = 5000
+
+/** Tipos de conteúdo do flood. Payment é TIPO, não segundo executor. */
+export const FLOOD_TIPOS = { TEXTO: "texto", MENCION: "mention", MEDIA: "media", PAGAMENTO: "payment" }
+export const FLOOD_TIPOS_LABEL = {
+    texto: "📝 texto puro",
+    mention: "🏷️ menção (lista explícita)",
+    media: "🖼️ mídia (imagem do preset/menu)",
+    payment: "💳 pagamento (requestPaymentMessage do fork)"
+}
 export const HTTP_UA =
     "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
 
@@ -37,11 +51,18 @@ export const SESSION_ERROR_WINDOW_MS = 60 * 1000
 export const SESSION_RECOVERY_COOLDOWN_MS = 2 * 60 * 1000
 
 export const FLOOD_MODOS = {
-    rapido: { intervalo: 50, lote: 8, label: "Rápido 50ms/lote8" },
-    normal: { intervalo: 100, lote: 6, label: "Normal 100ms/lote6" },
-    lento: { intervalo: 250, lote: 4, label: "Lento 250ms/lote4" },
+    // [v53] lotes maiores: o gargalo real é o cliente/servidor do WhatsApp, e o
+    // rate-limit já é tratado com backoff em limiter.js — lote maior = job mais
+    // curto = menos janela de desconexão. O modo "seguro" continua o único com
+    // jitter ligado por default.
+    rapido: { intervalo: 40, lote: 12, label: "Rápido 40ms/lote12" },
+    normal: { intervalo: 100, lote: 8, label: "Normal 100ms/lote8" },
+    lento: { intervalo: 250, lote: 5, label: "Lento 250ms/lote5" },
     seguro: { intervalo: 500, lote: 3, label: "Seguro 500ms/lote3 + jitter" }
 }
+
+/** Chaves que a v52 tinha e a v53 aposentou (allowlist/dry-run/modo-teste). */
+export const CONFIG_CHAVES_APOSENTADAS = ["floodAllowlist", "floodDryRun", "floodTestMode"]
 
 export const CONFIG = {
     nome: "๛ղվx 𝖅𝖚𝖈𝖐𝖊𝖗𝖇𝖊𝖗𝖌",
@@ -62,7 +83,19 @@ export const CONFIG = {
     usuariosAutorizados: [],
     gruposAutorizados: [],
     lidsAutorizados: [],
-    donosExtras: []
+    donosExtras: [],
+    // [FLOOD · presets] chaves da infraestrutura de flood (recuperadas da arena
+    // [FLOOD · v53] allowlist, dry-run e modo-teste deixaram de existir: o flood
+    // obedece à mesma permissão do resto do bot e o alvo é sempre escolha
+    // explícita do operador. O que cercar é teto e kill switch, não ensaio.
+    floodKillSwitch: false,
+    floodMaxRetries: 1,
+    floodTimeoutMs: 15000,
+    floodMaxMensagens: 2000,
+    floodErrorStop: 3,
+    floodPaceAdaptativo: true,
+    floodTipo: "texto",
+    floodCustomPresets: []
 }
 
 export function carregarConfig() {
@@ -88,6 +121,22 @@ export function carregarConfig() {
             if (!Array.isArray(CONFIG.gruposAutorizados)) CONFIG.gruposAutorizados = []
             if (!Array.isArray(CONFIG.lidsAutorizados)) CONFIG.lidsAutorizados = []
             if (!Array.isArray(CONFIG.donosExtras)) CONFIG.donosExtras = []
+            if (typeof CONFIG.floodKillSwitch !== "boolean") CONFIG.floodKillSwitch = false
+            if (!CONFIG.floodMaxRetries) CONFIG.floodMaxRetries = 1
+            if (!CONFIG.floodTimeoutMs) CONFIG.floodTimeoutMs = 15000
+            if (!Number.isFinite(CONFIG.floodMaxMensagens)) CONFIG.floodMaxMensagens = MAX_FLOOD
+            if (!Number.isFinite(CONFIG.floodErrorStop)) CONFIG.floodErrorStop = 3
+            if (typeof CONFIG.floodPaceAdaptativo !== "boolean") CONFIG.floodPaceAdaptativo = true
+            if (!FLOOD_TIPOS_LABEL[CONFIG.floodTipo] && CONFIG.floodTipo !== FLOOD_TIPOS.PAGAMENTO) CONFIG.floodTipo = FLOOD_TIPOS.TEXTO
+            // migração honesta: chaves aposentadas saem do config (e o terminal avisa
+            // uma vez) em vez de ficarem vivas sem efeito.
+            for (const k of CONFIG_CHAVES_APOSENTADAS) {
+                if (k in CONFIG) {
+                    delete CONFIG[k]
+                    CONFIG.__migracaoAposentadas = (CONFIG.__migracaoAposentadas || []).concat(k)
+                }
+            }
+            if (!Array.isArray(CONFIG.floodCustomPresets)) CONFIG.floodCustomPresets = []
         }
     } catch {}
     if (CONFIG.ownerOverride) setConfigOwner(CONFIG.ownerOverride)
@@ -96,6 +145,13 @@ export function carregarConfig() {
     setAuthorizedLids(CONFIG.lidsAutorizados)
     setExtraOwners(CONFIG.donosExtras)
     return CONFIG
+}
+
+/** Teto efetivo de mensagens por alvo de flood (config ∩ teto duro do código). */
+export function floodMaxEfetivo() {
+    const pedido = Number(CONFIG.floodMaxMensagens)
+    const base = Number.isFinite(pedido) && pedido > 0 ? pedido : MAX_FLOOD
+    return Math.max(1, Math.min(FLOOD_TETO_ABSOLUTO, Math.trunc(base)))
 }
 
 export function salvarConfig() {

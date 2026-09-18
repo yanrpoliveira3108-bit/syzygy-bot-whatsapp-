@@ -166,7 +166,7 @@ export async function sendInteractiveList(sockParam, jid, options) {
 }
 
 // [v51] Parser ÚNICO de respostas interativas — cobre as estruturas que o
-// fork @innovatorssoft/baileys 7.4.7 efetivamente entrega (interactiveResponse
+// fork @lucasmod/boruto-vk7-baileys 2.1.0 efetivamente entrega (interactiveResponse
 // native flow, list clássica, buttons e template).
 export function getListId(m) {
     if (!m || !m.message) return null

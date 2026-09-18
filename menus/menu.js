@@ -12,6 +12,7 @@ import { TEXT_TO_ACTION } from "../commands/commandMap.js"
 import { CONFIG_OPCOES } from "./configMenu.js"
 import { STATUS_MENU_MAP } from "../features/statusManager/index.js"
 import { getSock, rt } from "../connection/socket.js"
+import { CONFIG, FLOOD_MODOS } from "../utils/config.js"
 import { safeSendMessage } from "../services/groupService.js"
 import { ok, err, warn, info } from "../utils/terminalUI.js"
 
@@ -29,10 +30,17 @@ export const COMANDOS = [
     { id: "cfg_status", title: "Status", description: "Ver status completo online", categoria: "Grupos" },
 
     // Ataque & Domínio
-    { id: "painel_flood", title: "FLOOD", description: "Envio massivo com ondas 50ms/lote8", categoria: "Ataque" },
+    { id: "painel_flood", title: "🌊 FLOOD", description: `Envio massivo · ${FLOOD_MODOS[CONFIG.floodModo]?.label || "normal"}`, categoria: "Ataque" },
     { id: "painel_tudo", title: "Preset + NUKE", description: "Aplica preset + remove todos", categoria: "Ataque" },
     { id: "painel_roubar", title: "Roubar Grupo", description: "Tira ADM todos, fecha e domina", categoria: "Ataque" },
     { id: "fast_flood_help", title: "Flood Rápido", description: "Ex: 2/01/Oi/20/1", categoria: "Ataque" },
+    { id: "painel_flood_presets", title: "Flood Presets", description: "text · mention · media · payment", categoria: "Ataque" },
+    { id: "cfg_flood_targets", title: "Flood Alvos", description: "escolher grupos (1,3,5)", categoria: "Ataque" },
+    { id: "flood_preset_payment_test", title: "Payment Test", description: "💳 payment-test no alvo selecionado", categoria: "Ataque" },
+    { id: "cfg_flood_tipo", title: "Flood Tipo", description: "padrão: texto ⇄ pagamento", categoria: "Ataque" },
+    { id: "cfg_flood_kill", title: "Flood Kill", description: "🛑 parar tudo na fronteira do lote", categoria: "Ataque" },
+    { id: "cfg_flood_xray", title: "Flood Raio-X", description: "teto · job · cooldown · alvos", categoria: "Ataque" },
+    { id: "fast_flood_preset_help", title: "Preset Rápido", description: "Ex: 2/preset/payment-test", categoria: "Ataque" },
     { id: "fast_nuke_help", title: "Nuke Rápido", description: "Ex: 3/01/2/Oi", categoria: "Ataque" },
     { id: "fast_roubar_help", title: "Roubar Rápido", description: "Ex: 4/01/2", categoria: "Ataque" },
     { id: "fast_multi_flood_help", title: "Multi Flood", description: "Ex: 6/1,3,5/1/Oi/20/1", categoria: "Ataque" },
@@ -50,7 +58,8 @@ export const COMANDOS = [
     { id: "cfg_fantasma", title: "Marcar Fantasma", description: "Toggle mencionar invisível", categoria: "Config" },
     { id: "cfg_flood_modo", title: "Flood Modo", description: "rapido/normal/lento/seguro", categoria: "Config" },
     { id: "cfg_flood_interval", title: "Flood Intervalo", description: "20-5000ms custom", categoria: "Config" },
-    { id: "cfg_flood_lote", title: "Flood Lote", description: "1-10 msgs por lote", categoria: "Config" },
+    { id: "cfg_flood_lote", title: "Flood Lote", description: "1-20 msgs por lote", categoria: "Config" },
+    { id: "cfg_flood_speed", title: "Flood Velocidade", description: "modo + intervalo + lote", categoria: "Config" },
     { id: "cfg_autolimpeza", title: "Auto-Limpeza", description: "Toggle limpeza fantasmas", categoria: "Config" },
     { id: "cfg_antitakeover", title: "Anti-Takeover", description: "Toggle proteção ADM", categoria: "Config" },
     { id: "cfg_owner", title: "Ver Proprietário", description: "Ver dono", categoria: "Config" },
@@ -98,7 +107,7 @@ export const COMANDOS = [
 // Função que divide automaticamente em sections de 25 (limite WhatsApp)
 // [v50] NÚMEROS REAIS de navegação de cada comando — descobertos do próprio
 // sistema (nada inventado): commandMap numérico (painel 1-8), CONFIG_OPCOES
-// (config 6>1-11 · dono 5>12-35) e mapa do Status (7>1-11). Comando sem
+// (config 6>1-11 · dono 5>12-46) e mapa do Status (7>1-11). Comando sem
 // número no sistema não ganha número.
 const NUM_PAINEL = {}
 for (const [k, v] of Object.entries(TEXT_TO_ACTION)) {

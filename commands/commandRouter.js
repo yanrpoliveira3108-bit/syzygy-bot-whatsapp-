@@ -45,7 +45,21 @@ export const OWNER_ONLY = new Set([
     "cfg_viewonce_groups",
     "cfg_viewonce_owner",
     "cfg_viewonce_admins",
-    "cfg_viewonce_save"
+    "cfg_viewonce_save",
+    // [FLOOD · v53] controles da feature features/flood/ (só dono)
+    "cfg_flood_targets",
+    "cfg_flood_kill",
+    "cfg_flood_speed",
+    "cfg_flood_tipo",
+    "cfg_flood_xray",
+    "painel_flood_presets",
+    "painel_flood_pagamento",
+    "flood_kill_on",
+    "flood_kill_off",
+    "flood_preset_text_test",
+    "flood_preset_mention_test",
+    "flood_preset_media_test",
+    "flood_preset_payment_test"
 ])
 
 export async function roteadorAcoes(chatJid, ownerKey, actionId) {
@@ -71,7 +85,7 @@ export async function roteadorAcoes(chatJid, ownerKey, actionId) {
     // mesma função do caminho numérico (nenhuma lógica duplicada).
     const stGA = getState(ownerKey)
     const GA_DIRETO = {
-        painel_flood: "waiting_flood_message",
+        painel_flood: "waiting_flood_tipo",
         painel_tudo: "waiting_tudo_name",
         painel_roubar: "roubar_grupo",
         painel_so_nome: "waiting_name",
@@ -123,7 +137,7 @@ export async function roteadorAcoes(chatJid, ownerKey, actionId) {
     if (actionId === "painel_foto_link" || actionId === "owner_foto_link") { await pedirGrupo("waiting_image_url"); return }
     if (actionId === "painel_remover_foto" || actionId === "owner_remover_foto") { await pedirGrupo("confirm_rmfoto"); return }
 
-    if (actionId === "owner_flood" || actionId === "painel_flood") { await pedirGrupo("waiting_flood_message"); return }
+    if (actionId === "owner_flood" || actionId === "painel_flood") { await pedirGrupo("waiting_flood_tipo"); return }
     if (actionId === "owner_tudo" || actionId === "painel_tudo") { await pedirGrupo("waiting_tudo_name"); return }
     if (actionId === "owner_roubar" || actionId === "painel_roubar") { await pedirGrupo("roubar_grupo"); return }
     if (actionId === "owner_config" || actionId === "painel_config") { await enviarSubmenuConfig(chatJid, ownerKey, "adm"); return }
@@ -217,12 +231,13 @@ export async function roteadorAcoes(chatJid, ownerKey, actionId) {
     if (actionId.startsWith("fast_")) {
         const { safeSendMessage } = await import("../services/groupService.js")
         let help = ""
-        if (actionId === "fast_flood_help") help = `⚡ FLOOD RÁPIDO\nFormato: 2/<grupo>/<msg>/<qtd>[/<modo>][@tempo]\nEx: 2/01/Oi/20/1\nModos: 1 rapido 50ms/lote8, 2 normal 100ms/lote6, 3 lento 250ms/lote4, 4 seguro 500ms/lote3\nCom @ agenda: 2/01/Oi/20/1@10m`
+        if (actionId === "fast_flood_preset_help") help = `🌊 FLOOD PRESETS\n2/preset/<nome>[/conteúdo[/qtd]]\nNomes: text-test, mention-test, media-test, payment-test (+ os seus, em 12)\nEx: 2/preset/payment-test/Pagamento do pedido|25,90|BRL/50\n\nAtalhos: floodpresets · paymenttest · texttest · mentiontest · mediatest\n         floodstop = para tudo · floodstart = libera · floodalvos = trocar alvo\nAlvo: a seleção feita em 36 (ou 2 → grupos). Sem seleção, nada é enviado.`
+        else if (actionId === "fast_flood_help") help = `⚡ FLOOD RÁPIDO\nFormato: 2/<grupo>/<msg>/<qtd>[/<modo>][@tempo]\nEx: 2/01/Oi/20/1\nModos: 1 rapido 40ms/lote12, 2 normal 100ms/lote8, 3 lento 250ms/lote5, 4 seguro 500ms/lote3+jitter\nCom @ agenda: 2/01/Oi/20/1@10m\n💳 pagamento: use 2/preset/payment-test/<nota>|<valor>|<moeda>/<qtd>`
         else if (actionId === "fast_nuke_help") help = `💣 NUKE RÁPIDO\nFormato: 3/<grupo>/<preset>[/<msg|pular>][@tempo]\nEx: 3/01/2/Oi\nEx: 3/01/0/pular (0=config padrão)\nEx: 3/01/2/Oi@1h (agenda 1h)`
         else if (actionId === "fast_roubar_help") help = `⚡ ROUBAR RÁPIDO\nFormato: 4/<grupo>/<preset>[@tempo]\nEx: 4/01/2\nEx: 4/Kk/0@20:30`
-        else if (actionId === "fast_multi_flood_help") help = `🔢 MULTI FLOOD\nFormato: 6/<grupos>/1/<msg>/<qtd>[/<modo>][@tempo]\nEx: 6/1,3,5/1/Oi/20/1\nEx: 6/1-5/1/Oi/20/1@10m`
+        else if (actionId === "fast_multi_flood_help") help = `🔢 MULTI FLOOD\nFormato: 6/<grupos>/1/<msg>/<qtd>[/<modo>][@tempo]\nEx: 6/1,3,5/1/Oi/20/1\nEx: 6/1-5/1/Oi/20/1@10m\n💳 pagamento em lote: 2 → 1,3,5 → tipo 2 (o wizard pergunta nota/valor/moeda)`
         else if (actionId === "fast_multi_nuke_help") help = `🔢 MULTI NUKE\nFormato: 6/<grupos>/2/<preset>[/<msg>][@tempo]\nEx: 6/1,3,5/2/2/Oi\nEx: 6/1-5/2/0/pular`
-        else if (actionId === "fast_config_help") help = `⚙️ CONFIG RÁPIDO\n5/16/1 → ler mais (liga/desliga)\n5/17/rapido → flood modo\n5/18/200 → intervalo\n5/19/8 → lote\n5/24/5511... → add ADM\n5/26/01 → add grupo autorizado\n5/28/5511... → add dono extra\n(números = menu 5 · Comandos do Dono)`
+        else if (actionId === "fast_config_help") help = `⚙️ CONFIG RÁPIDO\n5/16/1 → ler mais (liga/desliga)\n5/17/rapido → flood modo\n5/18/200 → intervalo\n5/19/8 → lote\n5/24/5511... → add ADM\n5/26/01 → add grupo autorizado\n5/28/5511... → add dono extra\n5/36/1,3,5 → alvos do flood\n5/37 → kill switch · 5/40 → tipo (texto/pagamento)\n(números = menu 5 · Comandos do Dono, 12-41)`
         else if (actionId === "fast_agendar_help") help = `⏰ AGENDAR RÁPIDO\nUse @ no final:\n3/01/2/Oi@10m → nuke em 10m\n2/01/Oi/20/1@1h → flood em 1h\n4/01/2@20:30 → roubar 20:30\nFormatos tempo: 10s, 5m, 2h, 1d, 20:30, 25/08 20:00`
         else help = `⚡ MODO RÁPIDO\nUse / para comandos diretos e @ para agendar`
         await safeSendMessage(chatJid, { text: help }, 0)
@@ -315,6 +330,129 @@ export async function roteadorAcoes(chatJid, ownerKey, actionId) {
         await getSock().sendMessage(chatJid, { text: `Anti-takeover agora: ${CONFIG.antiTakeover ? "LIGADO" : "DESLIGADO"}\n\nDetecta perda de admin, remoção e promoções suspeitas.` })
         return
     }
+    // ══ ⚔️ FLOOD · CONTROLES (35-40) — fachada features/flood/router.js ══════
+    // (painel de presets, atalhos *_test, kill switch, escolha de grupos). A fachada
+    // só usa runPresetJob → executarFlood; ela não abre segundo caminho de envio, e
+    // desde a v53 não há allowlist nem dry-run: o alvo é a seleção do operador.
+    if (
+        actionId === "painel_flood_presets" ||
+        actionId === "painel_flood_pagamento" ||
+        actionId === "flood_presets_menu" ||
+        actionId === "cfg_flood_targets" ||
+        actionId === "flood_pick_groups" ||
+        actionId.startsWith("flood_preset_") ||
+        actionId === "flood_kill_on" ||
+        actionId === "flood_kill_off"
+    ) {
+        try {
+            const { floodRouter } = await import("../features/flood/index.js")
+            await floodRouter(chatJid, ownerKey, actionId)
+        } catch (e) {
+            await getSock().sendMessage(chatJid, { text: `❌ flood: ${e?.message || e}` })
+        }
+        return
+    }
+
+    // 🛑 kill switch — a ÚNICA cerca de "não dispare agora" do flood (37).
+    if (actionId === "cfg_flood_kill") {
+        try {
+            const fx = await import("../features/flood/index.js")
+            const agora = fx.toggleKillSwitch({ persist: true })
+            await getSock().sendMessage(chatJid, {
+                text: `${agora ? "🛑 Flood BLOQUEADO (kill switch ligado)" : "▶️ Flood liberado"}\n\n${fx.killSwitchStatusTexto()}\n\n_Efeito: jobs de preset e o flood do wizard param na fronteira do lote._`
+            })
+        } catch (e) {
+            await getSock().sendMessage(chatJid, { text: `❌ kill switch: ${e.message}` })
+        }
+        return
+    }
+    // 🚀 velocidade dos presets (38) — vale para o config e como overlay do job.
+    if (actionId === "cfg_flood_speed") {
+        try {
+            const fx = await import("../features/flood/index.js")
+            setState(ownerKey, { action: "config_set_flood_speed" })
+            await getSock().sendMessage(chatJid, {
+                text: `${fx.formatFloodSpeedMenu()}\n\n_o valor escolhido vale para o flood clássico (config.json) e é o overlay de velocidade dos presets (concorrência nunca sobe acima do preset)._\n(cancelar para sair)`
+            })
+        } catch (e) {
+            await getSock().sendMessage(chatJid, { text: `❌ velocidade: ${e.message}` })
+        }
+        return
+    }
+    // 💳 tipo padrão do flood (40) — texto ⇄ pagamento, no mesmo laço.
+    if (actionId === "cfg_flood_tipo") {
+        try {
+            const fx = await import("../features/flood/index.js")
+            await fx.floodRouter(chatJid, ownerKey, "cfg_flood_tipo")
+        } catch (e) {
+            await getSock().sendMessage(chatJid, { text: `❌ tipo do flood: ${e.message}` })
+        }
+        return
+    }
+    // 🌊 presets disponíveis (35) — só a lista, sem rodar nada.
+    if (actionId === "cfg_flood_presets") {
+        try {
+            const fx = await import("../features/flood/index.js")
+            const cap = fx.FLOOD_PRESET_HARD_CAP
+            await getSock().sendMessage(chatJid, {
+                text: `${fx.listPresetsTexto()}\n\n${fx.formatCustomPresetsTexto()}\n\n_Teto por job: ${cap.maxMessages} msg · intervalo mín. ${cap.minInterval}ms · ${cap.maxConcurrency} por vez · cooldown mín. ${cap.minCooldown}ms.\nUso: 2 · FLOOD → tipo → conteúdo · ou atalho paymenttest / 2/preset/<id>._`
+            })
+        } catch (e) {
+            await getSock().sendMessage(chatJid, { text: `❌ presets: ${e.message}` })
+        }
+        return
+    }
+    // 🩺 raio-X do job (39) — o diagnóstico honesto: o que está rodando, o que é
+    // barrado e qual é o teto. Sem dry-run/allowlist na v53, é aqui que se confere
+    // se o flood está armado ou não.
+    if (actionId === "cfg_flood_xray") {
+        try {
+            const fx = await import("../features/flood/index.js")
+            const { CONFIG } = await import("../utils/config.js")
+            const rc = fx.getFloodRuntimeConfig()
+            const cap = fx.FLOOD_PRESET_HARD_CAP
+            const defId = fx.DEFAULT_FLOOD_PRESET_ID
+            const def = fx.getPresetDef(defId)
+            const cd = def ? fx.remainingCooldown(defId, def.cooldown || 0) : 0
+            const job = fx.currentJobInfo()
+            const alvos = fx.getFloodSelection(ownerKey)
+            const t = [
+                "🩺 RAIO-X DO FLOOD",
+                `• kill switch: ${rc.killSwitch ? "🛑 LIGADO (nada sai)" : "liberado"}`,
+                `• tipo padrão: ${fx.floodTipoLabel(rc.tipo)}`,
+                `• alvos da sessão: ${alvos.length ? `${alvos.length} grupo(s) (36 para trocar)` : "nenhum → os atalhos recusam e nada sai"}`,
+                `• flood clássico (wizard): ${CONFIG.floodModo} ${CONFIG.floodInterval}ms/lote${CONFIG.floodLote} · teto ${rc.maxMensagens} msg/alvo`,
+                `• timeout por send: ${rc.timeoutMs}ms · retries: ${rc.maxRetries} · para no ${rc.errorStop}º erro seguido`,
+                `• ritmo adaptativo: ${rc.paceAdaptativo ? "LIGADO (abre o intervalo se a conexão reclamar)" : "desligado"}`,
+                `• teto de preset: ${cap.maxMessages} msg · mín ${cap.minInterval}ms · conc ${cap.maxConcurrency} · cooldown mín ${cap.minCooldown}ms`,
+                `• cooldown do preset "${defId}": ${cd > 0 ? `${cd}ms restantes` : "livre"}`,
+                `• job em andamento: ${job ? `${job.presetId} (${job.type}) há ${Math.round(job.elapsedMs / 1000)}s · ${job.targets.length} alvo(s)${job.cancelled ? " · CANCELANDO" : ""}` : "nenhum"}`,
+                `• presets ligados: ${fx.listPresetIds().length} + ${fx.listCustomPresets().length} custom`,
+                "",
+                "_parar agora: 37 (kill switch) — a fila para na fronteira do lote._"
+            ].join("\n")
+            await getSock().sendMessage(chatJid, { text: t })
+        } catch (e) {
+            await getSock().sendMessage(chatJid, { text: `❌ raio-x: ${e.message}` })
+        }
+        return
+    }
+    // Números/ids que deixaram de existir na v53 (allowlist, dry-run, modo-teste,
+    // preview da loja): resposta explícita em vez de ignorar em silêncio.
+    if (["cfg_flood_dryrun", "cfg_flood_testmode", "cfg_flood_allowlist", "cfg_flood_allowlist_view",
+         "cfg_flood_allowlist_add", "cfg_flood_allowlist_remove", "cfg_flood_loja",
+         "flood_preset_shopping_test"].includes(actionId)) {
+        const { itemRemovido } = await import("../utils/menuArt.js")
+        const nomes = {
+            cfg_flood_dryrun: "🧪 Dry-run", cfg_flood_testmode: "🎯 Modo teste",
+            cfg_flood_allowlist: "🛡️ Allowlist", cfg_flood_allowlist_view: "🛡️ Allowlist",
+            cfg_flood_allowlist_add: "➕ Add na allowlist", cfg_flood_allowlist_remove: "➖ Remover da allowlist",
+            cfg_flood_loja: "🛍️ Loja / card de loja", flood_preset_shopping_test: "🛍️ Shopping test"
+        }
+        await getSock().sendMessage(chatJid, { text: itemRemovido(nomes[actionId] || actionId, "saiu da v53.") })
+        return
+    }
+
     if (actionId === "cfg_limpar_fantasmas") {
         await getSock().sendMessage(chatJid, { text: "Limpando grupos fantasmas..." })
         try {

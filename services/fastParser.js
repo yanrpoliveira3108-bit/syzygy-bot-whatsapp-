@@ -6,7 +6,7 @@ import { rt } from "../connection/socket.js"
 import { getSock } from "../connection/socket.js"
 import { setState } from "../utils/stateManager.js"
 import { normalizeNumber, isOwner, isAuthorizedGroup } from "../utils/permissions.js"
-import { CONFIG, MAX_FLOOD, FLOOD_MODOS } from "../utils/config.js"
+import { CONFIG, FLOOD_MODOS, floodMaxEfetivo } from "../utils/config.js"
 import { atualizarGrupos, executarFlood, executarFloodLote, nukeComPreset, nukeComPresetLote, roubarGrupo, roubarGrupoLote, getFloodConfig, resolverGrupoInput, safeSendMessage, cachedGroupMetadata } from "./groupService.js"
 import { ordenarGrupos } from "../menus/groupMenu.js"
 import { getPreset, fotoPresetPath, listarPresetsTexto } from "./presetService.js"
@@ -211,8 +211,29 @@ export async function handleFastCommand(chatJid, ownerKey, textRaw) {
 
     // 2 - FLOOD
     if (cmd === "2") {
+        // 2/preset/<nome>[/conteúdo[/qtd]] — roda o preset pela fachada
+        // features/flood/router.js (runPresetJob → executarFlood do AB7). Alvo = a
+        // seleção do operador (36 / painel 2); sem seleção, o router recusa.
+        if (String(partsRaw[1] || "").toLowerCase() === "preset") {
+            const { floodRouter } = await import("../features/flood/index.js")
+            const name = String(partsRaw[2] || "").trim().toLowerCase()
+            if (!name) {
+                await safeSendMessage(chatJid, { text: `❌ Flood preset: 2/preset/<nome>[/conteúdo[/qtd]]\nNomes: text-test · mention-test · media-test · payment-test (e os seus, em 12)\nEx: 2/preset/payment-test/Pagamento do pedido|25,90|BRL/50\nAlvo: seleção feita em 36 (ou 2 · FLOOD). Sem seleção, nada é enviado.` })
+                return true
+            }
+            // último segmento puramente numérico = quantidade pedida (2/preset/<id>/<nota>|<v>|<m>/50)
+            const segs = partsRaw.slice(3).map(x => String(x).trim())
+            let rest = segs.join("/")
+            let qtd = null
+            if (segs.length > 1 && /^\d{1,4}$/.test(segs[segs.length - 1])) {
+                qtd = Number(segs[segs.length - 1])
+                rest = segs.slice(0, -1).join("/")
+            }
+            await floodRouter(chatJid, ownerKey, "run", { presetId: name, rest, qtd })
+            return true
+        }
         if (partsRaw.length < 4) {
-            await safeSendMessage(chatJid, { text: `❌ Flood rápido: 2/<grupo>/<msg>/<qtd>[/<modo>][@tempo]\nEx: 2/01/Oi/20/1\nEx: 2/01/Oi/20/1@10m (agenda em 10m)` })
+            await safeSendMessage(chatJid, { text: `❌ Flood rápido: 2/<grupo>/<msg>/<qtd>[/<modo>][@tempo]\nEx: 2/01/Oi/20/1\nEx: 2/01/Oi/20/1@10m (agenda em 10m)\n💳 Ex: 2/01/pag:Pedido|25,90|BRL/20/1\nPreset: 2/preset/<nome>` })
             return true
         }
         let modo = null, qtdStr, msgParts
@@ -251,17 +272,31 @@ export async function handleFastCommand(chatJid, ownerKey, textRaw) {
         }
         if (isScheduled) {
             const cfg = modo ? getFloodConfig(modo) : getFloodConfig(CONFIG.floodModo)
-            await agendarSePrecisar("flood", [grupo], { qtd: Math.min(qtd, MAX_FLOOD), modo: cfg.modo }, mensagem)
+            await agendarSePrecisar("flood", [grupo], { qtd: Math.min(qtd, floodMaxEfetivo()), modo: cfg.modo }, mensagem)
             return true
         }
         const cfg = modo ? getFloodConfig(modo) : getFloodConfig(CONFIG.floodModo)
+        // 💳 "pag:" na mensagem = TIPO pagamento no mesmo laço (builder por
+        // iteração do preset), nunca um segundo send path.
+        const { detectPaymentTrigger, resolvePaymentContent, floodContentBuilderFor } = await import("../features/flood/index.js")
+        const gatilho = detectPaymentTrigger(mensagem)
+        let pagamento = null
+        if (gatilho.isPayment) {
+            const r = resolvePaymentContent(gatilho.rest)
+            if (!r.ok) { await safeSendMessage(chatJid, { text: `❌ ${r.error}\n${r.usage}` }); return true }
+            pagamento = r.content
+        }
         let msgFlood = mensagem
-        if (CONFIG.linkDivulgacao) msgFlood += `\n${CONFIG.linkDivulgacao}`
-        await safeSendMessage(chatJid, { text: `⚡ Flood rápido: ${grupo.subject} | ${qtd} | modo ${cfg.modo}` })
+        if (gatilho.isPayment) msgFlood = pagamento.text
+        else if (CONFIG.linkDivulgacao) msgFlood += `\n${CONFIG.linkDivulgacao}`
+        const builder = pagamento
+            ? floodContentBuilderFor({ floodTipo: "payment", floodContent: pagamento, floodFrom: getSock()?.user?.id })
+            : null
+        await safeSendMessage(chatJid, { text: `⚡ Flood rápido${pagamento ? " 💳" : ""}: ${grupo.subject} | ${qtd} | modo ${cfg.modo}${pagamento ? `\n${pagamento.currency} ${Number(pagamento.amount).toFixed(2)}` : ""}` })
         try {
-            const r = await executarFlood(grupo.id, msgFlood, Math.min(qtd, MAX_FLOOD), cfg)
+            const r = await executarFlood(grupo.id, msgFlood, Math.min(qtd, floodMaxEfetivo()), cfg, builder)
             const { registrarAcao } = await import("./historicoService.js")
-            registrarAcao("flood", { id: grupo.id, subject: grupo.subject, qtd: r.total, modo: r.modo, ok: r.ok, via: "fast" })
+            registrarAcao("flood", { id: grupo.id, subject: grupo.subject, qtd: r.total, modo: r.modo, ok: r.ok, tipo: pagamento ? "payment" : "text", via: "fast" })
             await safeSendMessage(chatJid, { text: `✅ Flood: ${r.ok}/${r.total} em ${grupo.subject} | ${r.modo}` })
         } catch (e) {
             await safeSendMessage(chatJid, { text: `❌ ${e.message}` })
@@ -405,7 +440,11 @@ export async function handleFastCommand(chatJid, ownerKey, textRaw) {
             const { isOwner } = await import("../utils/permissions.js")
             const { OWNER_ONLY } = await import("../commands/commandRouter.js").catch(() => ({ OWNER_ONLY: new Set() }))
             // Se OWNER_ONLY não exportado, usa lista local
-            const ownerOnlyLocal = new Set(["cfg_menuImage","cfg_criar_preset","cfg_apagar_preset","cfg_link","cfg_ler_mais","cfg_flood_modo","cfg_flood_interval","cfg_flood_lote","cfg_autolimpeza","cfg_antitakeover","cfg_limpar_fantasmas","cfg_limpar_agendamentos","cfg_add_user","cfg_remove_user","cfg_add_group","cfg_remove_group","cfg_add_owner","cfg_remove_owner","cfg_viewonce_toggle","cfg_viewonce_groups","cfg_viewonce_owner","cfg_viewonce_admins","cfg_viewonce_save"])
+            // [v53] sem allowlist/dry-run/testmode/loja na lista: são ids que não
+            // existem mais. A fonte continua sendo OWNER_ONLY do roteador; esta
+            // cópia só existe para o parser não depender de import circular.
+            let ownerOnlyLocal = new Set(["cfg_menuImage","cfg_criar_preset","cfg_apagar_preset","cfg_link","cfg_ler_mais","cfg_flood_modo","cfg_flood_interval","cfg_flood_lote","cfg_autolimpeza","cfg_antitakeover","cfg_limpar_fantasmas","cfg_limpar_agendamentos","cfg_add_user","cfg_remove_user","cfg_add_group","cfg_remove_group","cfg_add_owner","cfg_remove_owner","cfg_viewonce_toggle","cfg_viewonce_groups","cfg_viewonce_owner","cfg_viewonce_admins","cfg_viewonce_save","flood_kill_on","flood_kill_off","painel_flood_presets","painel_flood_pagamento","cfg_flood_targets","cfg_flood_kill","cfg_flood_speed","cfg_flood_tipo","cfg_flood_presets","cfg_flood_xray","flood_preset_text_test","flood_preset_mention_test","flood_preset_media_test","flood_preset_payment_test"])
+            try { const m = await import("../commands/commandRouter.js"); if (m?.OWNER_ONLY?.size) ownerOnlyLocal = m.OWNER_ONLY } catch {}
             if ((ownerOnlyLocal.has(actionId)) && !isOwner(ownerKey)) {
                 await safeSendMessage(chatJid, { text: `❌ Apenas dono: ${actionId}` })
                 return true
@@ -612,7 +651,7 @@ export async function handleFastCommand(chatJid, ownerKey, textRaw) {
                 const mensagem = msgParts.join("/").trim()
                 const qtd = parseInt(String(qtdStr).replace(/\D/g, ""))
                 const cfg = modo ? getFloodConfig(modo) : getFloodConfig(CONFIG.floodModo)
-                await agendarSePrecisar("flood", grupos, { qtd: Math.min(qtd, MAX_FLOOD), modo: cfg.modo }, mensagem)
+                await agendarSePrecisar("flood", grupos, { qtd: Math.min(qtd, floodMaxEfetivo()), modo: cfg.modo }, mensagem)
                 return true
             }
             if (tipo === "2") {
@@ -657,7 +696,7 @@ export async function handleFastCommand(chatJid, ownerKey, textRaw) {
             if (CONFIG.linkDivulgacao) msgFlood += `\n${CONFIG.linkDivulgacao}`
             await safeSendMessage(chatJid, { text: `⚡ Multi flood rápido: ${grupos.length} grupos | ${qtd} | modo ${cfg.modo}` })
             try {
-                const res = await executarFloodLote(grupos, msgFlood, Math.min(qtd, MAX_FLOOD), cfg)
+                const res = await executarFloodLote(grupos, msgFlood, Math.min(qtd, floodMaxEfetivo()), cfg)
                 const okG = res.filter(r => r.ok).length
                 await safeSendMessage(chatJid, { text: `✅ Multi flood: ${okG}/${grupos.length} OK` })
             } catch (e) { await safeSendMessage(chatJid, { text: `❌ ${e.message}` }) }
