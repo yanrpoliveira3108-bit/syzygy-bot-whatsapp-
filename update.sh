@@ -292,10 +292,78 @@ collide_fix() {
     [ -f "$f" ] || continue
     d="$BK/collide/$(dirname "$f")"; mkdir -p "$d"
     cp -a "$f" "$d/" 2>/dev/null && rm -f "$f" && warn "arquivo seu não rastreado movido para o backup (o merge o sobrescreveria): $f"
+    # registra: um arquivo de RUNTIME (sessao/pre-key, creds, config) é sempre o
+    # que manda — o do repositório é snapshot velho. Devolvemos no fim.
+    printf '%s\n' "$f" >> "$BK/collide.list"
   done
   rm -f "$untracked_list" "$incoming"
   return 0
 }
+
+# Devolve o que era seu: sem isto, um update "de sucesso" deixava o sessao/ sem
+# pre-key e a sessão sofria no dia seguinte.
+restore_collided() {
+  [ -s "$BK/collide.list" ] || return 0
+  n=0
+  for f in $(sort -u "$BK/collide.list"); do
+    [ -f "$BK/collide/$f" ] || continue
+    mkdir -p "$(dirname "$f")" 2>/dev/null
+    if cmp -s "$BK/collide/$f" "$f" 2>/dev/null; then continue; fi
+    cp -a "$BK/collide/$f" "$f" && n=$((n+1))
+  done
+  [ "$n" = "0" ] || ok "devolvidos $n arquivo(s) seus realocados pelo collide_fix (o seu vence o snapshot do repo)"
+  return 0
+}
+
+# Vital que a ref nova apagou do repo (ex.: sessao/ e config.json deixaram de ser
+# rastreados): se sumiu do disco, volta do vital.tgz — sem isto, "--cached"
+# no lado de quem publicou vira perda de sessão no aparelho de quem atualiza.
+vital_reassert() {
+  [ -f "$BK/vital.tgz" ] || return 0
+  lost=""
+  for v in $VITAL; do
+    [ -e "$ROOT/$v" ] || lost="$lost $v"
+  done
+  [ -n "$lost" ] || return 0
+  log "restaurando do backup o que a ref nova não trackeia mais:$lost"
+  # só o que sumiu (extração seletiva): nunca por cima de arquivo que ainda está aí
+  tar -xzf "$BK/vital.tgz" -C "$ROOT" $lost 2>/dev/null && ok "vital reconstituído" || warn "não consegui reconstituir$lost — está em $(basename "$BK")/vital.tgz"
+}
+
+# ── guarda: índice com entrada unmerged trava TODO merge/ff ──────────────────
+# Foi assim que um update falhou no aparelho: sobrou estado de um merge
+# interrompido (MERGE_HEAD/arquivos UU) e o git se recusou a mexer em qualquer
+# coisa. O snapshot do backup já foi feito a esta altura, então dá para
+# desarmar o processo interrompido sem risco de perder trabalho.
+GD=$(git rev-parse --git-dir)
+unmerged_guard() {
+  n=$(git ls-files -u 2>/dev/null | wc -l | tr -d ' ')
+  [ "$n" != "0" ] || return 0
+  warn "índice tem $n entrada(s) unmerged (merge interrompido?) — isso trava ff e merge"
+  git ls-files -u 2>/dev/null | awk '{print $4}' | sort -u | head -8 | sed 's/^/    /'
+  if [ -f "$GD/MERGE_HEAD" ]; then
+    log "git merge --abort (devolve o estado para antes do merge interrompido)"
+    git merge --abort 2>/dev/null || warn "merge --abort não correu bem"
+  elif [ -d "$GD/rebase-merge" ] || [ -d "$GD/rebase-apply" ]; then
+    log "git rebase --abort"
+    git rebase --abort 2>/dev/null || warn "rebase --abort não correu bem"
+  elif [ -f "$GD/CHERRY_PICK_HEAD" ] || [ -f "$GD/REVERT_HEAD" ]; then
+    log "git cherry-pick/revert --abort"
+    git cherry-pick --abort 2>/dev/null; git revert --abort 2>/dev/null
+  fi
+  # o que sobrar é só índice marcado: reset limpa a marca SEM tocar nos arquivos
+  if [ -n "$(git ls-files -u 2>/dev/null | head -1)" ]; then
+    log "git reset (só o índice; sua árvore não é tocada) para limpar as marcas"
+    git reset -q 2>/dev/null || warn "git reset não limpo o índice"
+  fi
+  if [ -n "$(git ls-files -u 2>/dev/null | head -1)" ]; then
+    die "ainda há entrada unmerged — resolva na mão (o backup está em ${BK#$ROOT/}):
+    git status -s
+    ./update.sh --restore $TS"
+  fi
+  ok "índice limpo, pode continuar"
+}
+unmerged_guard
 
 # ── 3b) --adopt: adotar a árvore de uma ref (linhagens divergentes) ───────────
 if [ "$MODE" = "adopt" ]; then
@@ -412,6 +480,10 @@ for ref in $REFS; do
 done
 
 reapply_local_work
+# ordem importa: primeiro o vital que a ref nova não trackeia, depois o que era
+# seu e o collide_fix realocou (a cópia viva é a mais recente = vence).
+vital_reassert
+restore_collided
 
 # ── 5) dependências ──────────────────────────────────────────────────────────
 need_npm=0
@@ -441,7 +513,7 @@ for t in features/flood/tests.js features/flood/tests-infra.js features/flood/te
   fi
 done
 if [ -f features/flood/doctor.mjs ]; then
-  node features/flood/doctor.mjs > "$BK/doctor.log" 2>&1 && ok "doctor.mjs ok (dry-run, zero envio)" || warn "doctor.mjs apontou algo — veja $BK/doctor.log"
+  node features/flood/doctor.mjs > "$BK/doctor.log" 2>&1 && ok "doctor.mjs ok (diagnóstico de leitura, zero envio)" || warn "doctor.mjs apontou algo — veja $BK/doctor.log"
 fi
 
 if command -v node >/dev/null 2>&1 && [ -f package.json ]; then

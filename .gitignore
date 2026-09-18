@@ -25,3 +25,20 @@ temp/
 
 # backups locais criados por ./update.sh (nunca versionar)
 .syzygy-backup/
+
+# ── ESTADO DE RUNTIME — nunca versionar (chave privada de sessão aqui!) ──────
+# sessao/ é o store do Baileys (pre-key, signed pre-key, app-state sync KEY,
+# creds). Publicar = entregar a sessão do WhatsApp. dono/ é o estado do painel
+# (histórico, presets com foto, config de status) e config.json é o número real
+# do dono + a lista de grupos. Clone novo: copie config.example.json → config.json.
+sessao/
+config.json
+dono/*
+!dono/menus/
+!dono/menus/**
+dono/menus/**/*
+!dono/menus/Foto-menu/
+!dono/menus/Foto-menu/.gitkeep
+
+# o que o update.sh cria ao redor de uma aplicação de ref
+.syzygy-backup/**/collide/
